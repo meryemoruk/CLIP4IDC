@@ -1,3 +1,4 @@
+import torch
 from torch.utils.data import DataLoader
 
 from dataloaders.levircc_retrieval_loader import LEVIRCC_DataLoader
@@ -15,6 +16,8 @@ def dataloader_levircc_train(args, tokenizer):
         data_path=args.data_path,
         tokenizer=tokenizer,
     )
+
+    train_sampler = torch.utils.data.distributed.DistributedSampler(levircc_dataset)
 
     dataloader = DataLoader(
         levircc_dataset,
