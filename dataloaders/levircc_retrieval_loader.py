@@ -156,13 +156,22 @@ class LEVIRCC_DataLoader(Dataset):
         )
 
         raw_image_data = self.rawImageExtractor.get_image_data(image_path)
+        
         if isinstance(raw_image_data, dict):
-            # eski sürüm uyumlu (bazı processor’lar dict döner)
-            raw_image_data = raw_image_data["pixel_values"].reshape(1, 3, 224, 224)
+            # Bazı modeller dict döndürüyor (örneğin eski CLIP)
+            if "pixel_values" in raw_image_data:
+                raw_image_data = raw_image_data["pixel_values"]
+            elif "image" in raw_image_data:
+                raw_image_data = raw_image_data["image"]
+            else:
+                raise KeyError(f"Beklenmeyen anahtarlar: {raw_image_data.keys()}")
         else:
-            # yeni sürüm: zaten tensor döner
-            raw_image_data = raw_image_data.reshape(1, 3, 224, 224)
-        #raw_image_data = raw_image_data["image"].pixel_values.reshape(1, 3, 224, 224)
+            # Yeni sürümde AutoProcessor tensor döner
+            pass  # zaten tensor olduğu için değiştirmiyoruz
+
+            
+        raw_image_data = raw_image_data.reshape(1, 3, 224, 224)
+
 
         image[0] = raw_image_data
 
