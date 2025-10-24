@@ -14,7 +14,8 @@ class RawImageExtractorCV2:
     def __init__(self, centercrop=False, size=224):
         self.centercrop = centercrop
         self.size = size
-        self.transform = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
+        self.transform = self._transform(self.size)
+        #self.transform = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
 
     def image_to_tensor(self, image_file, preprocess):
         image = Image.open(image_file).convert("RGB")
