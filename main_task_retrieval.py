@@ -150,7 +150,7 @@ def init_device(args, local_rank):
 def init_model(args, device, n_gpu, local_rank):
 
     if args.init_model:
-        model_state_dict = torch.load(args.init_model, map_location='cpu')
+        model_state_dict = torch.load(args.init_model, map_location='cpu', weights_only=True)
     else:
         model_state_dict = None
 
