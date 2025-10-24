@@ -28,7 +28,7 @@ def dataloader_levircc_train(args, tokenizer):
         drop_last=True,
     )
 
-    return dataloader, len(levircc_dataset)
+    return dataloader, len(levircc_dataset), train_sampler
 
 
 def dataloader_levircc_test(args, tokenizer, subset="test"):
