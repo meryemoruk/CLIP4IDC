@@ -34,7 +34,7 @@ def get_args(description='CLIP4IDC on Retrieval Task'):
     parser.add_argument('--num_thread_reader', type=int, default=1, help='')
     parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate')
     parser.add_argument('--epochs', type=int, default=20, help='upper epoch limit')
-    parser.add_argument('--batch_size', type=int, default=256, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--batch_size_val', type=int, default=64, help='batch size eval')
     parser.add_argument('--lr_decay', type=float, default=0.9, help='Learning rate exp epoch decay')
     parser.add_argument('--n_display', type=int, default=100, help='Information display frequence')
