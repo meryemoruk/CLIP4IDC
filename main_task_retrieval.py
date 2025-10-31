@@ -14,7 +14,7 @@ from modules.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modules.modeling import CLIP4IDC
 from modules.optimization import BertAdam
 from modules.tokenization_clip import SimpleTokenizer as ClipTokenizer
-from utils.utils import get_logger
+from util import get_logger
 
 global logger
 
