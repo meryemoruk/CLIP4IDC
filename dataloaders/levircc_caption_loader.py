@@ -23,6 +23,8 @@ def _extract_raw_sentences(change_captions: dict[str, Any]) -> list[str]:
 class LEVIRCC_DataLoader(Dataset):
     """LEVIRCC dataset loader."""
 
+    
+
     change_caption_file_name = "merged.json"
 
     before_image_folder = "A"
@@ -40,8 +42,10 @@ class LEVIRCC_DataLoader(Dataset):
         image_resolution=224,
     ):
         self.data_path = data_path
-        self.default_features_path = os.path.join(self.data_path, "train")
-        self.default_features_path = os.path.join(self.data_path, "sem" ,"train")
+        self.default_features_path = os.path.join(self.data_path, "train", "rgb")
+        self.semantic_default_features_path = os.path.join(self.data_path, "train" ,"sem")
+
+
 
 
         logger.warning(">" * 50)
