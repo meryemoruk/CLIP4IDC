@@ -320,7 +320,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             token_type_ids,
             attention_mask,
             image_pairs,
-            #semantic_pairs,
+            semantic_pairs,
             image_mask,
             shaped=True,
             video_frame=pair,
@@ -371,7 +371,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
 
         return sequence_output, sequence_hidden
 
-    def get_visual_output(self, image_pair, visual_mask, shaped=False, video_frame=-1):
+    def get_visual_output(self, image_pair, semantic_pair, visual_mask, shaped=False, video_frame=-1):
         if shaped is False:
             visual_mask = visual_mask.view(-1, visual_mask.shape[-1])
             image_pair = torch.as_tensor(image_pair).float()
@@ -402,6 +402,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         token_type_ids,
         attention_mask,
         image_pair,
+        semantic_pair,
         visual_mask,
         shaped=False,
         video_frame=-1,
@@ -426,7 +427,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             input_ids, token_type_ids, attention_mask, shaped=True
         )
         visual_output, visual_hidden = self.get_visual_output(
-            image_pair, visual_mask, shaped=True, video_frame=video_frame
+            image_pair, semantic_pair, visual_mask, shaped=True, video_frame=video_frame
         )
 
         return sequence_output, visual_output, sequence_hidden, visual_hidden
