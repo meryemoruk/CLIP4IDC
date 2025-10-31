@@ -710,7 +710,7 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
-    def encode_image_and_semantic_map(self, image_pair, return_hidden=False, video_frame=-1):
+    def encode_image_and_semantic_map(self, image_pair, semantic_pair, return_hidden=False, video_frame=-1):
         image_hidden = self.visual(image_pair.type(self.dtype), video_frame=video_frame)
         image_features_pooled = self.visual.ln_post(image_hidden) @ self.visual.proj
 
