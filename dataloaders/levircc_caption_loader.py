@@ -28,8 +28,8 @@ class LEVIRCC_DataLoader(Dataset):
     before_image_folder = "A"
     after_image_folder = "B"
 
-    #before_semantic_folder = "A"
-    #after_semantic_folder = "B"
+    before_semantic_folder = "A"
+    after_semantic_folder = "B"
 
     def __init__(
         self,
@@ -41,7 +41,7 @@ class LEVIRCC_DataLoader(Dataset):
     ):
         self.data_path = data_path
         self.default_features_path = os.path.join(self.data_path, "train")
-        #self.default_features_path = os.path.join(self.data_path, "sem" ,"train")
+        self.default_features_path = os.path.join(self.data_path, "sem" ,"train")
 
 
         logger.warning(">" * 50)
@@ -218,17 +218,17 @@ class LEVIRCC_DataLoader(Dataset):
             image_name,
         )
 
-        #bfr_image_semantic_path = os.path.join(
-        #    self.default_semantic_features_path,
-        #    self.before_semantic_folder,
-        #    image_name,
-        #)
+        bfr_image_semantic_path = os.path.join(
+            self.default_semantic_features_path,
+            self.before_semantic_folder,
+            image_name,
+        )
 
-        #aft_image_semantic_path = os.path.join(
-        #    self.default_semantic_features_path,
-        #    self.after_semantic_folder,
-        #    image_name,
-        #)
+        aft_image_semantic_path = os.path.join(
+            self.default_semantic_features_path,
+            self.after_semantic_folder,
+            image_name,
+        )
 
         (
             pairs_text,
@@ -244,8 +244,8 @@ class LEVIRCC_DataLoader(Dataset):
 
         bef_image = self._get_rawimage(bef_image_path)
         aft_image = self._get_rawimage(aft_image_path)
-        #bef_semantic = self._get_rawimage(bfr_image_semantic_path)
-        #aft_semantic = self._get_rawimage(aft_image_semantic_path)
+        bef_semantic = self._get_rawimage(bfr_image_semantic_path)
+        aft_semantic = self._get_rawimage(aft_image_semantic_path)
 
         image_mask = np.ones(2, dtype=np.int64)
         return (
@@ -254,8 +254,8 @@ class LEVIRCC_DataLoader(Dataset):
             pairs_segment,
             bef_image,
             aft_image,
-            #bef_semantic,
-            #aft_semantic,
+            bef_semantic,
+            aft_semantic,
             image_mask,
             pairs_input_caption_ids,
             pairs_decoder_mask,
