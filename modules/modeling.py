@@ -386,6 +386,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         bs_pair = visual_mask.size(0)
         visual_output, visual_hidden = self.clip.encode_image_and_semantic_map(
             image_pair,
+            semantic_pair,
             video_frame=video_frame,
             return_hidden=True,
         )
