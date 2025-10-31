@@ -156,7 +156,7 @@ def init_device(args):
 
 def init_model(args, device):
     if args.init_model:
-        model_state_dict = torch.load(args.init_model, map_location="cpu")
+        model_state_dict = torch.load(args.init_model, map_location="cpu", weights_only=False)
         logger.info("Model loaded from %s", args.init_model)
     else:
         model_state_dict = None
