@@ -7,9 +7,9 @@ import numpy as np
 import torch
 
 from dataloaders.data_dataloaders import DATALOADER_DICT
-from metrics.metrics import compute_metrics
-from metrics.metrics import tensor_text_to_video_metrics
-from metrics.metrics import tensor_video_to_text_sim
+from metrics import compute_metrics
+from metrics import tensor_text_to_video_metrics
+from metrics import tensor_video_to_text_sim
 from modules.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modules.modeling import CLIP4IDC
 from modules.optimization import BertAdam
