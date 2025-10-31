@@ -358,7 +358,7 @@ def eval_epoch(args, model, test_dataloader, device, n_gpu):
         # ----------------------------
         for bid, batch in enumerate(test_dataloader):
             batch = tuple(t.to(device) for t in batch)
-            input_ids, input_mask, segment_ids, bef_image, aft_image, image_mask = batch
+            input_ids, input_mask, segment_ids, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = batch
             image_pair = torch.cat([bef_image, aft_image], 1)
 
             if multi_sentence_:
