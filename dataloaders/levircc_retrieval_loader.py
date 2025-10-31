@@ -50,7 +50,7 @@ class LEVIRCC_DataLoader(Dataset):
         self.subset = subset
         self.data_path = data_path
         self.default_features_path = os.path.join(self.data_path, "train", "rgb")
-        self.semantic_default_features_path = os.path.join(self.data_path, "train" ,"sem")
+        self.default_semantic_features_path = os.path.join(self.data_path, "train" ,"sem")
 
         if tokenizer is not None:
             self.tokenizer = tokenizer
