@@ -32,7 +32,7 @@ class LEVIRCC_DataLoader(Dataset):
 
     max_words = 64
     image_resolution = 224
-    change_caption_file_name = "merged.json"
+    change_caption_file_name = "merged.json" #change to SecondCC.json 
     before_image_folder = "A"
     after_image_folder = "B"
 
