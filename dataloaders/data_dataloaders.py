@@ -51,11 +51,31 @@ def dataloader_levircc_test(args, tokenizer, subset="test"):
     )
     return dataloader_levircc, len(levircc_testset)
 
+def dataloader_levircc_val(args, tokenizer, subset="val"):
+    if args.task_type == "retrieval":
+        DataSet_DataLoader = LEVIRCC_DataLoader
+    else:
+        DataSet_DataLoader = LEVIRCC_DataLoader_Caption
+
+    levircc_testset = DataSet_DataLoader(
+        subset=subset,  # type: ignore[arg-type]
+        data_path=args.data_path,
+        tokenizer=tokenizer,
+    )
+    dataloader_levircc = DataLoader(
+        levircc_testset,
+        batch_size=args.batch_size_val,
+        num_workers=0,
+        shuffle=False,
+        drop_last=False,
+    )
+    return dataloader_levircc, len(levircc_testset)
+
 
 DATALOADER_DICT = {}
 
 DATALOADER_DICT["levircc"] = {
     "train": dataloader_levircc_train,
-    "val": dataloader_levircc_test,
+    "val": dataloader_levircc_val,
     "test": dataloader_levircc_test,
 }
