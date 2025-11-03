@@ -52,6 +52,7 @@ def get_args(description='CLIP4IDC on Retrieval Task'):
     parser.add_argument("--decoder_model", default="decoder-base", type=str, required=False, help="Decoder module")
     parser.add_argument("--init_model", default=None, type=str, required=False, help="Initial model.")
     parser.add_argument("--resume_model", default=None, type=str, required=False, help="Resume train model.")
+    parser.add_argument("--resume_model_opt", default=None, type=str, required=False, help="Resume train model.")
     parser.add_argument("--do_lower_case", action='store_true', help="Set this flag if you are using an uncased model.")
     parser.add_argument("--warmup_proportion", default=0.1, type=float,
                         help="Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10%% of training.")
@@ -536,9 +537,9 @@ def main():
         resumed_epoch = 0
         if args.resume_model:
             checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             resumed_epoch = checkpoint['epoch']+1
-            resumed_loss = checkpoint['loss']
+            optimizer.load_state_dict(args.resume_model_opt)
+            #resumed_loss = checkpoint['loss']
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
