@@ -562,7 +562,8 @@ def main():
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
-            train_sampler.set_epoch(epoch)
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                train_sampler.set_epoch(epoch)
             logger.info("Get Ready Training is STARTING.")
             tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
                                                scheduler, global_step, local_rank=args.local_rank)
