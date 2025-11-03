@@ -234,7 +234,7 @@ def save_model(epoch, args, model, optimizer, tr_loss, type_name=""):
             'loss': tr_loss,
             }, optimizer_state_file)
     logger.info("Model saved to %s", output_model_file)
-    #logger.info("Optimizer saved to %s", optimizer_state_file)
+    logger.info("Optimizer saved to %s", optimizer_state_file)
     return output_model_file
 
 def load_model(epoch, args, n_gpu, device, model_file=None):
@@ -540,10 +540,13 @@ def main():
         resumed_epoch = 0
         if args.resume_model:
             #checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
+            logger.info("Start Loading Optimizer.")
             checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
             resumed_epoch = checkpoint_opt['epoch']+1
             optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
             resumed_loss = checkpoint_opt['loss']
+            logger.info("End Loading Optimizer.")
+
             #cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
             #model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=checkpoint, task_config=args)
         
