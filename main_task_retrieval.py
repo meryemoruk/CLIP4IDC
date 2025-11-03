@@ -53,7 +53,6 @@ def get_args(description='CLIP4IDC on Retrieval Task'):
     parser.add_argument("--init_model", default=None, type=str, required=False, help="Initial model.")
     parser.add_argument("--resume_model", default=None, type=str, required=False, help="Resume train model.")
     parser.add_argument("--resume_model_opt", default=None, type=str, required=False, help="Resume train model.")
-    parser.add_argument("--resume_model_epoch", default=0, type=int, help="Resume train model epoch.")
     parser.add_argument("--do_lower_case", action='store_true', help="Set this flag if you are using an uncased model.")
     parser.add_argument("--warmup_proportion", default=0.1, type=float,
                         help="Proportion of training to perform linear learning rate warmup for. E.g., 0.1 = 10%% of training.")
@@ -223,15 +222,14 @@ def save_model(epoch, args, model, optimizer, tr_loss, type_name=""):
     model_to_save = model.module if hasattr(model, 'module') else model
     output_model_file = os.path.join(
         args.output_dir, "pytorch_model.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
-    #optimizer_state_file = os.path.join(
-    #    args.output_dir, "pytorch_opt.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
-    #torch.save(model_to_save.state_dict(), output_model_file)
+    optimizer_state_file = os.path.join(
+        args.output_dir, "pytorch_opt.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
+    torch.save(model_to_save.state_dict(), output_model_file)
     torch.save({
-            'model_state_dict': model_to_save.state_dict(),
             'epoch': epoch,
             'optimizer_state_dict': optimizer.state_dict(),
             'loss': tr_loss,
-            }, output_model_file)
+            }, optimizer_state_file)
     logger.info("Model saved to %s", output_model_file)
     #logger.info("Optimizer saved to %s", optimizer_state_file)
     return output_model_file
@@ -539,11 +537,12 @@ def main():
         resumed_epoch = 0
         if args.resume_model:
             checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
-            resumed_epoch = checkpoint['epoch']+1
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            resumed_loss = checkpoint['loss']
+            checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
+            resumed_epoch = checkpoint_opt['epoch']+1
+            optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
+            resumed_loss = checkpoint_opt['loss']
             cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
-            model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=checkpoint['model_state_dict'], task_config=args)
+            model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=checkpoint, task_config=args)
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
