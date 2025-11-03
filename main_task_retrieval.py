@@ -154,6 +154,7 @@ def init_model(args, device, n_gpu, local_rank):
         model_state_dict = torch.load(args.init_model, map_location='cpu', weights_only=True)
     elif args.resume_model:
         model_state_dict = torch.load(args.resume_model, map_location='cpu', weights_only=True)
+        logger.info("✅ Resume model state loaded successfully.")
     else:
         model_state_dict = None
 
