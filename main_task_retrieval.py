@@ -18,7 +18,8 @@ from modules.optimization import BertAdam
 from util import parallel_apply, get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
 
-torch.distributed.init_process_group(backend="nccl")
+if torch.cuda.device_count() > 1:
+    torch.distributed.init_process_group(backend="nccl")
 
 global logger
 
@@ -215,7 +216,8 @@ def prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, loc
                          t_total=num_train_optimization_steps, weight_decay=weight_decay,
                          max_grad_norm=1.0)
 
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
                                                       output_device=local_rank, find_unused_parameters=True)
 
     return optimizer, scheduler, model
