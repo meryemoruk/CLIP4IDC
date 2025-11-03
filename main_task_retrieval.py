@@ -559,7 +559,7 @@ def main():
                 ckpt_groups = len(checkpoint_opt['optimizer_state_dict']['param_groups'])
                 curr_groups = len(optimizer.param_groups)
                 logger.info(f"Optimizer param_groups -> checkpoint: {ckpt_groups}, current: {curr_groups}")
-        
+        logger.info("Get Ready Training is STARTING.")
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
             logger.info("Get Ready Training is STARTING.")
