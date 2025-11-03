@@ -152,6 +152,8 @@ def init_model(args, device, n_gpu, local_rank):
 
     if args.init_model:
         model_state_dict = torch.load(args.init_model, map_location='cpu', weights_only=True)
+    elif args.resume_model:
+        model_state_dict = torch.load(args.resume_model, map_location='cpu', weights_only=True)
     else:
         model_state_dict = None
 
@@ -536,13 +538,13 @@ def main():
         ## ##############################################################
         resumed_epoch = 0
         if args.resume_model:
-            checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
+            #checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
             checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
             resumed_epoch = checkpoint_opt['epoch']+1
             optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
             resumed_loss = checkpoint_opt['loss']
-            cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
-            model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=checkpoint, task_config=args)
+            #cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
+            #model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=checkpoint, task_config=args)
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
