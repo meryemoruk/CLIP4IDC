@@ -562,6 +562,7 @@ def main():
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
+            logger.info("Get Ready Training is STARTING.")
             if torch.distributed.is_available() and torch.distributed.is_initialized():
                 train_sampler.set_epoch(epoch)
             logger.info("Get Ready Training is STARTING.")
