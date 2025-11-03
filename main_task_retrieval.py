@@ -18,6 +18,7 @@ from modules.optimization import BertAdam
 from util import parallel_apply, get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
 
+import torch.distributed as dist
 if torch.cuda.device_count() > 1:
     torch.distributed.init_process_group(backend="nccl")
 
@@ -116,11 +117,18 @@ def set_seed_logger(args):
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
-    world_size = torch.distributed.get_world_size()
-    torch.cuda.set_device(args.local_rank)
+    # Inside set_seed_logger(args)
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        world_size = torch.distributed.get_world_size()
+    else:
+        world_size = 1
     args.world_size = world_size
-    rank = torch.distributed.get_rank()
-    args.rank = rank
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        local_rank = torch.distributed.get_rank()
+    else:
+        local_rank = 0
+    torch.cuda.set_device(args.local_rank)
+    args.rank = local_rank
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
