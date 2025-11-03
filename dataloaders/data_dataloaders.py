@@ -17,7 +17,13 @@ def dataloader_levircc_train(args, tokenizer):
         tokenizer=tokenizer,
     )
 
-    train_sampler = torch.utils.data.distributed.DistributedSampler(levircc_dataset)
+    # Use DistributedSampler only if distributed is initialized
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        train_sampler = torch.utils.data.distributed.DistributedSampler(levircc_dataset)
+    else:
+        train_sampler = None
+
+    #train_sampler = torch.utils.data.distributed.DistributedSampler(levircc_dataset)
 
     dataloader = DataLoader(
         levircc_dataset,
