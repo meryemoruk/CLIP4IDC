@@ -224,11 +224,11 @@ def save_model(epoch, args, model, optimizer, tr_loss, type_name=""):
     optimizer_state_file = os.path.join(
         args.output_dir, "pytorch_opt.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
     torch.save(model_to_save.state_dict(), output_model_file)
-    # torch.save({
-    #         'epoch': epoch,
-    #         'optimizer_state_dict': optimizer.state_dict(),
-    #         'loss': tr_loss,
-    #         }, optimizer_state_file)
+    torch.save({
+             'epoch': epoch,
+             'optimizer_state_dict': optimizer.state_dict(),
+             'loss': tr_loss,
+             }, optimizer_state_file)
     logger.info("Model saved to %s", output_model_file)
     logger.info("Optimizer saved to %s", optimizer_state_file)
     return output_model_file
