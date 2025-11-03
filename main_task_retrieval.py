@@ -535,7 +535,7 @@ def main():
         ## ##############################################################
         resumed_epoch = 0
         if args.resume_model:
-            checkpoint = torch.load(args.resume_model, map_location='cpu')
+            checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             resumed_epoch = checkpoint['epoch']+1
             resumed_loss = checkpoint['loss']
