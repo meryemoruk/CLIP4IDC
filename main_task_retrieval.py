@@ -18,9 +18,9 @@ from modules.optimization import BertAdam
 from util import parallel_apply, get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
 
-import torch.distributed as dist
 if torch.cuda.device_count() > 1:
     torch.distributed.init_process_group(backend="nccl")
+
 
 global logger
 
@@ -467,6 +467,14 @@ def main():
     args = set_seed_logger(args)
     device, n_gpu = init_device(args, args.local_rank)
 
+    if args.n_gpu == 1:
+        torch.distributed.init_process_group(
+            backend='gloo',   # 'nccl' if using GPU, 'gloo' works for CPU as well
+            init_method='tcp://127.0.0.1:29500',
+            rank=0,
+            world_size=1
+        )
+
     tokenizer = ClipTokenizer()
 
     assert  args.task_type == "retrieval"
@@ -559,13 +567,11 @@ def main():
                 ckpt_groups = len(checkpoint_opt['optimizer_state_dict']['param_groups'])
                 curr_groups = len(optimizer.param_groups)
                 logger.info(f"Optimizer param_groups -> checkpoint: {ckpt_groups}, current: {curr_groups}")
-        logger.info("Get Ready Training is STARTING.")
+
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
-            logger.info("Get Ready Training is STARTING.")
             if torch.distributed.is_available() and torch.distributed.is_initialized():
                 train_sampler.set_epoch(epoch)
-            logger.info("Get Ready Training is STARTING.")
             tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
                                                scheduler, global_step, local_rank=args.local_rank)
             if args.local_rank == 0:
