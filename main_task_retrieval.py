@@ -539,20 +539,17 @@ def main():
         ## ##############################################################
         resumed_epoch = 0
         if args.resume_model:
-            #checkpoint = torch.load(args.resume_model, map_location='cpu', weights_only = True)
             logger.info("Start Loading Optimizer.")
             checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
             resumed_epoch = checkpoint_opt['epoch']+1
             optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
             resumed_loss = checkpoint_opt['loss']
             logger.info("End Loading Optimizer.")
-
-            #cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
-            #model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=checkpoint, task_config=args)
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
             train_sampler.set_epoch(epoch)
+            logger.info("Get Ready Training is STARTING.")
             tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
                                                scheduler, global_step, local_rank=args.local_rank)
             if args.local_rank == 0:
