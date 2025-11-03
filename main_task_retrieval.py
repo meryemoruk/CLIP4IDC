@@ -214,6 +214,12 @@ def prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, loc
                          schedule='warmup_cosine', b1=0.9, b2=0.98, e=1e-6,
                          t_total=num_train_optimization_steps, weight_decay=weight_decay,
                          max_grad_norm=1.0)
+    
+    if args.resume_model:
+            logger.info("Start Loading Optimizer.")
+            checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
+            optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
+            logger.info("End Loading Optimizer.")
 
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
                                                       output_device=local_rank, find_unused_parameters=True)
@@ -539,12 +545,12 @@ def main():
         ## ##############################################################
         resumed_epoch = 0
         if args.resume_model:
-            logger.info("Start Loading Optimizer.")
+            #logger.info("Start Loading Optimizer.")
             checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
             resumed_epoch = checkpoint_opt['epoch']+1
-            optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
+            #optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
             resumed_loss = checkpoint_opt['loss']
-            logger.info("End Loading Optimizer.")
+            #logger.info("End Loading Optimizer.")
         
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
