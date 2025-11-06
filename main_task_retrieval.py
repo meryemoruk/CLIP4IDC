@@ -620,6 +620,9 @@ def eval_epoch(args, model, test_dataloader, device):
     # ----------------------------------
     # 3. Get Top-5 Most Similar Sentences for a Random Image Pair
     # ----------------------------------
+        # ----------------------------------
+    # 3. Get Top-5 Most Similar Sentences for a Random Image Pair
+    # ----------------------------------
     import random
 
     if hasattr(test_dataloader.dataset, "texts"):
@@ -636,15 +639,13 @@ def eval_epoch(args, model, test_dataloader, device):
     topk_indices = np.argsort(-sim_matrix[:, random_img_idx])[:topk]
 
     # Convert to clean list of integers
-    if isinstance(topk_indices, (torch.Tensor, np.ndarray)):
-        topk_indices = np.array(topk_indices).reshape(-1).astype(int).tolist()
+    topk_indices = np.array(topk_indices).reshape(-1).astype(int).tolist()
 
     # Collect top-k sentences and scores
     topk_texts = [text_list[i] for i in topk_indices]
-    topk_scores = [float(sim_matrix[i, random_img_idx].mean()) for i in topk_indices]
+    topk_scores = [float(sim_matrix[i, random_img_idx]) for i in topk_indices]
 
-    # Print the results
-    print(f"\nRandomly Selected Image Pair Index: {random_img_idx}")
+    print(f"\n Randomly Selected Image Pair Index: {random_img_idx}")
     print("Top-5 Most Similar Sentences:")
     for rank, (sent, score) in enumerate(zip(topk_texts, topk_scores), 1):
         print(f"  {rank}. {sent} (score={score:.4f})")
@@ -652,9 +653,6 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
-
-    R1 = tv_metrics["R1"]
-    return R1
 
 
 
