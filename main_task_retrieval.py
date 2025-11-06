@@ -677,13 +677,8 @@ def main():
         # logger.info("*" * 80)
 
         coef_lr = args.coef_lr
-        optimizer, scheduler, model = prep_optimizer(
-            args,
-            model,
-            num_train_optimization_steps,
-            device,
-            coef_lr=coef_lr,
-        )
+        optimizer, scheduler, model = prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, args.local_rank, coef_lr=coef_lr)
+
 
         logger.info("***** Running training *****")
         logger.info("  Training Num examples = %d", train_length)
