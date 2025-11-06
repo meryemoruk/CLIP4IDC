@@ -616,35 +616,42 @@ def eval_epoch(args, model, test_dataloader, device):
 
     # ... keep all your existing code up to sim_matrix creation ...
 
+    
     # ----------------------------------
-    # 3. Get Top-5 Most Similar Sentences per Image
+    # 3. Get Top-5 Most Similar Sentences for a Random Image Pair
     # ----------------------------------
+    import random
+
     if hasattr(test_dataloader.dataset, "texts"):
         text_list = test_dataloader.dataset.texts
     else:
         text_list = [f"Sentence {i}" for i in range(sim_matrix.shape[0])]
 
     topk = 5
-    top_sentences = []
 
-    for img_idx in range(sim_matrix.shape[1]):
-        # Sort descending
-        topk_indices = np.argsort(-sim_matrix[:, img_idx])[:topk]
+    # Pick a random image pair index
+    random_img_idx = random.randint(0, sim_matrix.shape[1] - 1)
 
-        # Convert to flat list of ints (safe for tensor or ndarray)
-        if isinstance(topk_indices, (torch.Tensor, np.ndarray)):
-            topk_indices = np.array(topk_indices).reshape(-1).astype(int).tolist()
+    # Sort descending similarities for that image
+    topk_indices = np.argsort(-sim_matrix[:, random_img_idx])[:topk]
 
-        # Fetch top-k texts and scores
-        topk_texts = [text_list[i] for i in topk_indices]
-        topk_scores = [float(sim_matrix[i, img_idx].mean()) for i in topk_indices]
+    # Convert to clean list of integers
+    if isinstance(topk_indices, (torch.Tensor, np.ndarray)):
+        topk_indices = np.array(topk_indices).reshape(-1).astype(int).tolist()
 
-        top_sentences.append(list(zip(topk_texts, topk_scores)))
+    # Collect top-k sentences and scores
+    topk_texts = [text_list[i] for i in topk_indices]
+    topk_scores = [float(sim_matrix[i, random_img_idx].mean()) for i in topk_indices]
 
-    for i in range(min(3, len(top_sentences))):
-        print(f"\nImage Pair {i+1}:")
-        for rank, (sent, score) in enumerate(top_sentences[i], 1):
-            print(f"  {rank}. {sent} (score={score:.4f})")
+    # Print the results
+    print(f"\nRandomly Selected Image Pair Index: {random_img_idx}")
+    print("Top-5 Most Similar Sentences:")
+    for rank, (sent, score) in enumerate(zip(topk_texts, topk_scores), 1):
+        print(f"  {rank}. {sent} (score={score:.4f})")
+
+    R1 = tv_metrics["R1"]
+    return R1
+
 
     R1 = tv_metrics["R1"]
     return R1
