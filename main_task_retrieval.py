@@ -637,7 +637,7 @@ def eval_epoch(args, model, test_dataloader, device):
 
         # Fetch top-k texts and scores
         topk_texts = [text_list[i] for i in topk_indices]
-        topk_scores = [float(sim_matrix[i, img_idx]) for i in topk_indices]
+        topk_scores = [float(sim_matrix[i, img_idx].mean()) for i in topk_indices]
 
         top_sentences.append(list(zip(topk_texts, topk_scores)))
 
