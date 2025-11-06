@@ -535,8 +535,8 @@ def eval_epoch(args, model, test_dataloader, device):
                     batch_list_v.append((pair_mask,))
                 total_pair_num += b
 
-            #logger.info(f"{bid}/{len(test_dataloader)}\r")
-            print(f"{bid}/{len(test_dataloader)}\r", end="", flush=True)
+            logger.info(f"{bid}/{len(test_dataloader)}\r")
+            #print(f"{bid}/{len(test_dataloader)}\r", end="", flush=True)
 
 
         # ----------------------------------
