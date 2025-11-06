@@ -750,7 +750,7 @@ def main():
         for epoch in range(resumed_epoch, args.epochs):
             train_sampler.set_epoch(epoch)  # Removed for single GPU
             tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
-                                               scheduler, global_step, local_rank=args.local_rank)
+                                               scheduler, global_step, args.local_rank)
  
 
             logger.info(
