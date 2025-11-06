@@ -14,7 +14,12 @@ from modules.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modules.modeling import CLIP4IDC
 from modules.optimization import BertAdam
 from modules.tokenization_clip import SimpleTokenizer as ClipTokenizer
-from util import get_logger
+
+from util import parallel_apply, get_logger
+from dataloaders.data_dataloaders import DATALOADER_DICT
+
+if torch.cuda.device_count() > 1:
+    torch.distributed.init_process_group(backend="nccl")
 
 global logger
 
@@ -54,6 +59,7 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--decoder_model", default="decoder-base", type=str, required=False, help="Decoder module")
     parser.add_argument("--init_model", default=None, type=str, required=False, help="Initial model.")
     parser.add_argument("--resume_model", default=None, type=str, required=False, help="Resume train model.")
+    parser.add_argument("--resume_model_opt", default=None, type=str, required=False, help="Resume train model.")
     parser.add_argument("--do_lower_case", action="store_true", help="Set this flag if you are using an uncased model.")
     parser.add_argument(
         "--warmup_proportion",
@@ -132,17 +138,36 @@ def set_seed_logger(args):
     global logger
     # predefining random initial seeds
     random.seed(args.seed)
-    os.environ["PYTHONHASHSEED"] = str(args.seed)
+    os.environ['PYTHONHASHSEED'] = str(args.seed)
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)  # if you are using multi-GPU.
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
+
+    # Inside set_seed_logger(args)
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        world_size = torch.distributed.get_world_size()
+    else:
+        world_size = 1
+    args.world_size = world_size
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        local_rank = torch.distributed.get_rank()
+    else:
+        local_rank = 0
+    torch.cuda.set_device(args.local_rank)
+    args.rank = local_rank
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
 
     logger = get_logger(os.path.join(args.output_dir, "log.txt"))
+
+    if args.local_rank == 0:
+        logger.info("Effective parameters:")
+        for key in sorted(args.__dict__):
+            logger.info("  <<< {}: {}".format(key, args.__dict__[key]))
 
     return args
 
@@ -154,145 +179,94 @@ def init_device(args):
     return device
 
 
-def init_model(args, device):
+def init_model(args, device, n_gpu, local_rank):
+
     if args.init_model:
-        model_state_dict = torch.load(args.init_model, map_location="cpu", weights_only=False)
-        logger.info("Model loaded from %s", args.init_model)
+        model_state_dict = torch.load(args.init_model, map_location='cpu', weights_only=True)
+    elif args.resume_model:
+        model_state_dict = torch.load(args.resume_model, map_location='cpu', weights_only=True)
+        logger.info("✅ Resume model state loaded successfully.")
     else:
         model_state_dict = None
-        logger.info("Model init file is not exist.")
 
     # Prepare model
-    cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), "distributed")
-    model = CLIP4IDC.from_pretrained(
-        args.cross_model,
-        args.decoder_model,
-        cache_dir=cache_dir,
-        state_dict=model_state_dict,
-        task_config=args,
-    )
+    cache_dir = args.cache_dir if args.cache_dir else os.path.join(str(PYTORCH_PRETRAINED_BERT_CACHE), 'distributed')
+    model = CLIP4IDC.from_pretrained(args.cross_model, args.decoder_model, cache_dir=cache_dir, state_dict=model_state_dict, task_config=args)
 
     model.to(device)
 
     return model
 
 
-def prep_optimizer(
-    args,
-    model,
-    num_train_optimization_steps,
-    device,
-    coef_lr=1.0,
-):
-    if hasattr(model, "module"):
+def prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, local_rank, coef_lr=1.):
+
+    if hasattr(model, 'module'):
         model = model.module
 
     param_optimizer = list(model.named_parameters())
-    no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
+    no_decay = ['bias', 'LayerNorm.bias', 'LayerNorm.weight']
 
     decay_param_tp = [(n, p) for n, p in param_optimizer if not any(nd in n for nd in no_decay)]
     no_decay_param_tp = [(n, p) for n, p in param_optimizer if any(nd in n for nd in no_decay)]
 
-    decay_clip_param_tp = [
-        (n, p)
-        for n, p in decay_param_tp
-        if "clip." in n
-        and "clip.visual.ln_mid" not in n
-        and "clip.visual.joint_positional_embedding" not in n
-        and "clip.visual.bef_embedding" not in n
-        and "clip.visual.aft_embedding" not in n
-    ]
-    decay_noclip_param_tp = [
-        (n, p)
-        for n, p in decay_param_tp
-        if "clip.visual.ln_mid" in n
-        or "clip.visual.joint_positional_embedding" in n
-        or "clip.visual.bef_embedding" in n
-        or "clip.visual.aft_embedding" in n
-    ]
+    decay_clip_param_tp = [(n, p) for n, p in decay_param_tp
+                           if "clip." in n
+                           and "clip.visual.ln_mid" not in n
+                           and "clip.visual.joint_positional_embedding" not in n
+                           and "clip.visual.bef_embedding" not in n
+                           and "clip.visual.aft_embedding" not in n]
+    decay_noclip_param_tp = [(n, p) for n, p in decay_param_tp
+                             if "clip.visual.ln_mid" in n
+                             or "clip.visual.joint_positional_embedding" in n
+                             or "clip.visual.bef_embedding" in n
+                             or "clip.visual.aft_embedding" in n]
 
-    no_decay_clip_param_tp = [
-        (n, p)
-        for n, p in no_decay_param_tp
-        if "clip." in n
-        and "clip.visual.ln_mid" not in n
-        and "clip.visual.joint_positional_embedding" not in n
-        and "clip.visual.bef_embedding" not in n
-        and "clip.visual.aft_embedding" not in n
-    ]
-    no_decay_noclip_param_tp = [
-        (n, p)
-        for n, p in no_decay_param_tp
-        if "clip.visual.ln_mid" in n
-        or "clip.visual.joint_positional_embedding" in n
-        or "clip.visual.bef_embedding" in n
-        or "clip.visual.aft_embedding" in n
-    ]
+    no_decay_clip_param_tp = [(n, p) for n, p in no_decay_param_tp
+                              if "clip." in n
+                              and "clip.visual.ln_mid" not in n
+                              and "clip.visual.joint_positional_embedding" not in n
+                              and "clip.visual.bef_embedding" not in n
+                              and "clip.visual.aft_embedding" not in n]
+    no_decay_noclip_param_tp = [(n, p) for n, p in no_decay_param_tp
+                                if "clip.visual.ln_mid" in n
+                                or "clip.visual.joint_positional_embedding" in n
+                                or "clip.visual.bef_embedding" in n
+                                or "clip.visual.aft_embedding" in n]
 
     weight_decay = 0.2
     optimizer_grouped_parameters = [
-        {
-            "params": [p for n, p in decay_clip_param_tp],
-            "weight_decay": weight_decay,
-            "lr": args.lr * coef_lr,
-        },
-        {
-            "params": [p for n, p in decay_noclip_param_tp],
-            "weight_decay": weight_decay,
-        },
-        {
-            "params": [p for n, p in no_decay_clip_param_tp],
-            "weight_decay": 0.0,
-            "lr": args.lr * coef_lr,
-        },
-        {
-            "params": [p for n, p in no_decay_noclip_param_tp],
-            "weight_decay": 0.0,
-        },
+        {'params': [p for n, p in decay_clip_param_tp], 'weight_decay': weight_decay, 'lr': args.lr * coef_lr},
+        {'params': [p for n, p in decay_noclip_param_tp], 'weight_decay': weight_decay},
+        {'params': [p for n, p in no_decay_clip_param_tp], 'weight_decay': 0.0, 'lr': args.lr * coef_lr},
+        {'params': [p for n, p in no_decay_noclip_param_tp], 'weight_decay': 0.0}
     ]
 
     scheduler = None
-    optimizer = BertAdam(
-        optimizer_grouped_parameters,
-        lr=args.lr,
-        warmup=args.warmup_proportion,
-        schedule="warmup_cosine",
-        b1=0.9,
-        b2=0.98,
-        e=1e-6,
-        t_total=num_train_optimization_steps,
-        weight_decay=weight_decay,
-        max_grad_norm=1.0,
-    )
+    optimizer = BertAdam(optimizer_grouped_parameters, lr=args.lr, warmup=args.warmup_proportion,
+                         schedule='warmup_cosine', b1=0.9, b2=0.98, e=1e-6,
+                         t_total=num_train_optimization_steps, weight_decay=weight_decay,
+                         max_grad_norm=1.0)
 
-    model.to(device)
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
+                                                      output_device=local_rank, find_unused_parameters=True)
 
     return optimizer, scheduler, model
 
 
 def save_model(epoch, args, model, optimizer, tr_loss, type_name=""):
     # Only save the model it-self
-    model_to_save = model.module if hasattr(model, "module") else model
+    model_to_save = model.module if hasattr(model, 'module') else model
     output_model_file = os.path.join(
-        args.output_dir,
-        "pytorch_model.bin.{}{}".format(
-            "" if type_name == "" else type_name + ".",
-            epoch,
-        ),
-    )
+        args.output_dir, "pytorch_model.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
     optimizer_state_file = os.path.join(
-        args.output_dir,
-        "pytorch_opt.bin.{}{}".format(
-            "" if type_name == "" else type_name + ".",
-            epoch,
-        ),
-    )
+        args.output_dir, "pytorch_opt.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
     torch.save(model_to_save.state_dict(), output_model_file)
-    # torch.save({
-    #         'epoch': epoch,
-    #         'optimizer_state_dict': optimizer.state_dict(),
-    #         'loss': tr_loss,
-    #         }, optimizer_state_file)
+    torch.save({
+            'epoch': epoch,
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': tr_loss,
+            }, optimizer_state_file)
     logger.info("Model saved to %s", output_model_file)
     logger.info("Optimizer saved to %s", optimizer_state_file)
     return output_model_file
@@ -330,16 +304,7 @@ def load_model(epoch, args, device, model_file=None):
     return model
 
 
-def train_epoch(
-    epoch,
-    args,
-    model,
-    train_dataloader,
-    device,
-    optimizer,
-    scheduler,
-    global_step,
-):
+def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, scheduler, global_step, local_rank=0):
     global logger
     torch.cuda.empty_cache()
     model.train()
@@ -349,92 +314,45 @@ def train_epoch(
 
     optimizer.zero_grad()
     for step, batch in enumerate(train_dataloader):
-        try:
-            # Verileri tek GPU'ya taşı
+        if n_gpu == 1:
+            # multi-gpu does scattering it-self
             batch = tuple(t.to(device=device, non_blocking=True) for t in batch)
-            (
-                input_ids,
-                input_mask,
-                segment_ids,
-                bef_image,
-                aft_image,
-                bef_semantic,
-                aft_semantic,
-                image_mask,
-            ) = batch
 
-            #logger.warning("<"*10+"inferencing")
+        input_ids, input_mask, segment_ids, bef_image, aft_image, image_mask = batch
+        loss = model(input_ids, segment_ids, input_mask, bef_image, aft_image, image_mask)
 
-            loss = model(
-                input_ids,
-                segment_ids,
-                input_mask,
-                bef_image,
-                aft_image,
-                bef_semantic,
-                aft_semantic,
-                image_mask,
-            )
+        if n_gpu > 1:
+            loss = loss.mean()  # mean() to average on multi-gpu.
+        if args.gradient_accumulation_steps > 1:
+            loss = loss / args.gradient_accumulation_steps
 
-            #logger.warning("<"*10+"inferenced")
-            #logger.warning("<"*10+str(loss))
+        loss.backward()
 
+        total_loss += float(loss)
+        if (step + 1) % args.gradient_accumulation_steps == 0:
 
-            if args.gradient_accumulation_steps > 1:
-                loss = loss / args.gradient_accumulation_steps
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-            for name, param in model.named_parameters():
-                if param.grad is not None:
-                    if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
-                        logger.info(f"HATA: {name} gradyanında NaN veya Inf bulundu!")
+            if scheduler is not None:
+                scheduler.step()  # Update learning rate schedule
 
+            optimizer.step()
+            optimizer.zero_grad()
 
-            loss.backward()
-
-            #logger.warning("loss backward ")
-
-            total_loss += float(loss)
-            if (step + 1) % args.gradient_accumulation_steps == 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-
-                #logger.warning("printing epoch info ")
-
-
-                if scheduler is not None:
-                    scheduler.step()  # Update learning rate schedule
-
-                optimizer.step()
-                optimizer.zero_grad()
-
-                # Clamp logit scale
+            # https://github.com/openai/CLIP/issues/46
+            if hasattr(model, 'module'):
+                torch.clamp_(model.module.clip.logit_scale.data, max=np.log(100))
+            else:
                 torch.clamp_(model.clip.logit_scale.data, max=np.log(100))
 
-                #logger.warning("torch.clamp operation done ")
-
-                global_step += 1
-                if global_step % log_step == 0:
-                    logger.info(
-                        "Epoch: " "%d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f",
-                        epoch + 1,
-                        args.epochs,
-                        step + 1,
-                        len(train_dataloader),
-                        "-".join(
-                            [
-                                str("%.9f" % itm)
-                                for itm in sorted(
-                                    list(set(optimizer.get_lr())),
-                                )
-                            ],
-                        ),
-                        float(loss),
-                        (time.time() - start_time) / (log_step * args.gradient_accumulation_steps),
-                    )
-                    start_time = time.time()
-
-        except Exception as e:
-            logger.error(f"Error at step {step}: {str(e)}")
-            raise
+            global_step += 1
+            if global_step % log_step == 0 and local_rank == 0:
+                logger.info("Epoch: %d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f", epoch + 1,
+                            args.epochs, step + 1,
+                            len(train_dataloader), "-".join([str('%.9f'%itm) for itm in sorted(list(set(optimizer.get_lr())))]),
+                            float(loss),
+                            (time.time() - start_time) / (log_step * args.gradient_accumulation_steps))
+                start_time = time.time()
 
     total_loss = total_loss / len(train_dataloader)
     return total_loss, global_step
