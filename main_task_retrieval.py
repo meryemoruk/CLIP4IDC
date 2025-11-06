@@ -667,7 +667,7 @@ def main():
     # train and eval
     # ####################################
     if args.do_train:
-        train_dataloader, train_length = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
+        train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
         num_train_optimization_steps = (
             int(len(train_dataloader) + args.gradient_accumulation_steps - 1) / args.gradient_accumulation_steps
         ) * args.epochs
@@ -708,7 +708,7 @@ def main():
 
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
-            # train_sampler.set_epoch(epoch)  # Removed for single GPU
+            train_sampler.set_epoch(epoch)  # Removed for single GPU
             tr_loss, global_step = train_epoch(
                 epoch,
                 args,
