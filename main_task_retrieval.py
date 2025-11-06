@@ -394,26 +394,14 @@ def train_epoch(
 
                 #logger.warning("torch.clamp operation done ")
 
-                global_step += 1
-                if global_step % log_step == 0:
-                    logger.info(
-                        "Epoch: " "%d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f",
-                        epoch + 1,
-                        args.epochs,
-                        step + 1,
-                        len(train_dataloader),
-                        "-".join(
-                            [
-                                str("%.9f" % itm)
-                                for itm in sorted(
-                                    list(set(optimizer.get_lr())),
-                                )
-                            ],
-                        ),
-                        float(loss),
-                        (time.time() - start_time) / (log_step * args.gradient_accumulation_steps),
-                    )
-                    start_time = time.time()
+            global_step += 1
+            if global_step % log_step == 0 and local_rank == 0:
+                logger.info("Epoch: %d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f", epoch + 1,
+                            args.epochs, step + 1,
+                            len(train_dataloader), "-".join([str('%.9f'%itm) for itm in sorted(list(set(optimizer.get_lr())))]),
+                            float(loss),
+                            (time.time() - start_time) / (log_step * args.gradient_accumulation_steps))
+                start_time = time.time()
 
         except Exception as e:
             logger.error(f"Error at step {step}: {str(e)}")
