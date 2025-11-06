@@ -565,12 +565,20 @@ def main():
     global logger
     args = get_args()
     args = set_seed_logger(args)
-    device = init_device(args)
+    device, n_gpu = init_device(args, args.local_rank)
+
+    if args.n_gpu == 1:
+        torch.distributed.init_process_group(
+            backend='gloo',   # 'nccl' if using GPU, 'gloo' works for CPU as well
+            init_method='tcp://127.0.0.1:29500',
+            rank=0,
+            world_size=1
+        )
 
     tokenizer = ClipTokenizer()
 
     assert args.task_type == "retrieval"
-    model = init_model(args, device)
+    model = init_model(args, device, n_gpu, args.local_rank)
 
     # ####################################
     # freeze testing
