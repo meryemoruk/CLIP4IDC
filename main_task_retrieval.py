@@ -322,6 +322,7 @@ def train_epoch(
     optimizer,
     scheduler,
     global_step,
+    local_rank=0
 ):
     global logger
     torch.cuda.empty_cache()
