@@ -623,35 +623,52 @@ def eval_epoch(args, model, test_dataloader, device):
         # ----------------------------------
     # 3. Get Top-5 Most Similar Sentences for a Random Image Pair
     # ----------------------------------
+        # ----------------------------------
+    # 3. Get Top-5 Most Similar Sentences for a Random Image Pair (works for multi-sentence sim_matrix)
+    # ----------------------------------
     import random
 
+    # If dataset stores the raw sentences/captions, use them.
+    # Expect length == total_sentence_num (e.g. 6121 in your logs).
     if hasattr(test_dataloader.dataset, "texts"):
         text_list = test_dataloader.dataset.texts
     else:
-        text_list = [f"Sentence {i}" for i in range(sim_matrix.shape[0])]
+        # fallback: create labels for the flattened sentences
+        # NOTE: when multi_sentence_, total_sentence_num should equal sim_matrix.shape[0]*sim_matrix.shape[1]
+        total_sentences = sim_matrix.shape[0] * sim_matrix.shape[1]
+        text_list = [f"Sentence {i}" for i in range(total_sentences)]
 
     topk = 5
 
-    # Pick a random image pair index
-    random_img_idx = random.randint(0, sim_matrix.shape[1] - 1)
+    # Flatten first two dims (pair, sentence_per_pair) -> sentences
+    # sim_matrix shape is (pair_num, max_sentences, pair_num) => we want (pair_num * max_sentences, pair_num)
+    sim_flat = sim_matrix.reshape(-1, sim_matrix.shape[2])  # shape: (num_sentences, num_image_pairs)
 
-    # Sort descending similarities for that image
-    topk_indices = np.argsort(-sim_matrix[:, random_img_idx])[:topk]
+    # pick a random image pair index
+    random_img_idx = random.randint(0, sim_flat.shape[1] - 1)
 
-    # Convert to clean list of integers
+    # get similarities for every sentence to that image pair (1D array)
+    sim_for_image = sim_flat[:, random_img_idx]  # shape: (num_sentences,)
+
+    # get topk sentence indices (descending)
+    topk_indices = np.argsort(-sim_for_image)[:topk]
+
+    # ensure Python list of ints
     topk_indices = np.array(topk_indices).reshape(-1).astype(int).tolist()
 
-    # Collect top-k sentences and scores
+    # fetch sentences and scalar scores
     topk_texts = [text_list[i] for i in topk_indices]
-    topk_scores = [float(sim_matrix[i, random_img_idx]) for i in topk_indices]
+    topk_scores = [float(sim_for_image[i]) for i in topk_indices]
 
-    print(f"\n Randomly Selected Image Pair Index: {random_img_idx}")
+    # print results
+    print(f"\n  Randomly Selected Image Pair Index: {random_img_idx}")
     print("Top-5 Most Similar Sentences:")
     for rank, (sent, score) in enumerate(zip(topk_texts, topk_scores), 1):
         print(f"  {rank}. {sent} (score={score:.4f})")
 
     R1 = tv_metrics["R1"]
     return R1
+
 
 
 
