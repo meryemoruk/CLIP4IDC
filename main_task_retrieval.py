@@ -631,6 +631,7 @@ def eval_epoch(args, model, test_dataloader, device):
     for img_idx in range(sim_matrix.shape[1]):
         topk_indices = np.argsort(-sim_matrix[:, img_idx])[:topk]
         topk_scores = sim_matrix[topk_indices, img_idx]
+        topk_indices = topk_indices.tolist()
         topk_texts = [text_list[i] for i in topk_indices]
         top_sentences.append(list(zip(topk_texts, topk_scores)))
 
