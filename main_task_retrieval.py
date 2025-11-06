@@ -313,7 +313,16 @@ def load_model(epoch, args, device, model_file=None):
     return model
 
 
-def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, scheduler, global_step, local_rank=0):
+def train_epoch(
+    epoch,
+    args,
+    model,
+    train_dataloader,
+    device,
+    optimizer,
+    scheduler,
+    global_step,
+):
     global logger
     torch.cuda.empty_cache()
     model.train()
@@ -323,45 +332,92 @@ def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, 
 
     optimizer.zero_grad()
     for step, batch in enumerate(train_dataloader):
-        if n_gpu == 1:
-            # multi-gpu does scattering it-self
+        try:
+            # Verileri tek GPU'ya taşı
             batch = tuple(t.to(device=device, non_blocking=True) for t in batch)
+            (
+                input_ids,
+                input_mask,
+                segment_ids,
+                bef_image,
+                aft_image,
+                bef_semantic,
+                aft_semantic,
+                image_mask,
+            ) = batch
 
-        input_ids, input_mask, segment_ids, bef_image, aft_image, image_mask = batch
-        loss = model(input_ids, segment_ids, input_mask, bef_image, aft_image, image_mask)
+            #logger.warning("<"*10+"inferencing")
 
-        if n_gpu > 1:
-            loss = loss.mean()  # mean() to average on multi-gpu.
-        if args.gradient_accumulation_steps > 1:
-            loss = loss / args.gradient_accumulation_steps
+            loss = model(
+                input_ids,
+                segment_ids,
+                input_mask,
+                bef_image,
+                aft_image,
+                bef_semantic,
+                aft_semantic,
+                image_mask,
+            )
 
-        loss.backward()
+            #logger.warning("<"*10+"inferenced")
+            #logger.warning("<"*10+str(loss))
 
-        total_loss += float(loss)
-        if (step + 1) % args.gradient_accumulation_steps == 0:
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            if args.gradient_accumulation_steps > 1:
+                loss = loss / args.gradient_accumulation_steps
 
-            if scheduler is not None:
-                scheduler.step()  # Update learning rate schedule
+            for name, param in model.named_parameters():
+                if param.grad is not None:
+                    if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                        logger.info(f"HATA: {name} gradyanında NaN veya Inf bulundu!")
 
-            optimizer.step()
-            optimizer.zero_grad()
 
-            # https://github.com/openai/CLIP/issues/46
-            if hasattr(model, 'module'):
-                torch.clamp_(model.module.clip.logit_scale.data, max=np.log(100))
-            else:
+            loss.backward()
+
+            #logger.warning("loss backward ")
+
+            total_loss += float(loss)
+            if (step + 1) % args.gradient_accumulation_steps == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+                #logger.warning("printing epoch info ")
+
+
+                if scheduler is not None:
+                    scheduler.step()  # Update learning rate schedule
+
+                optimizer.step()
+                optimizer.zero_grad()
+
+                # Clamp logit scale
                 torch.clamp_(model.clip.logit_scale.data, max=np.log(100))
 
-            global_step += 1
-            if global_step % log_step == 0 and local_rank == 0:
-                logger.info("Epoch: %d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f", epoch + 1,
-                            args.epochs, step + 1,
-                            len(train_dataloader), "-".join([str('%.9f'%itm) for itm in sorted(list(set(optimizer.get_lr())))]),
-                            float(loss),
-                            (time.time() - start_time) / (log_step * args.gradient_accumulation_steps))
-                start_time = time.time()
+                #logger.warning("torch.clamp operation done ")
+
+                global_step += 1
+                if global_step % log_step == 0:
+                    logger.info(
+                        "Epoch: " "%d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f",
+                        epoch + 1,
+                        args.epochs,
+                        step + 1,
+                        len(train_dataloader),
+                        "-".join(
+                            [
+                                str("%.9f" % itm)
+                                for itm in sorted(
+                                    list(set(optimizer.get_lr())),
+                                )
+                            ],
+                        ),
+                        float(loss),
+                        (time.time() - start_time) / (log_step * args.gradient_accumulation_steps),
+                    )
+                    start_time = time.time()
+
+        except Exception as e:
+            logger.error(f"Error at step {step}: {str(e)}")
+            raise
 
     total_loss = total_loss / len(train_dataloader)
     return total_loss, global_step
