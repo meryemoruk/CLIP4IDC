@@ -627,20 +627,25 @@ def eval_epoch(args, model, test_dataloader, device):
     topk = 5
     top_sentences = []
 
-    # for each image (column), get indices of most similar sentences
     for img_idx in range(sim_matrix.shape[1]):
+        # Sort descending
         topk_indices = np.argsort(-sim_matrix[:, img_idx])[:topk]
-        topk_scores = sim_matrix[topk_indices, img_idx]
-        topk_indices = topk_indices.tolist()
+
+        # Convert to flat list of ints (safe for tensor or ndarray)
+        if isinstance(topk_indices, (torch.Tensor, np.ndarray)):
+            topk_indices = np.array(topk_indices).reshape(-1).astype(int).tolist()
+
+        # Fetch top-k texts and scores
         topk_texts = [text_list[i] for i in topk_indices]
+        topk_scores = [float(sim_matrix[i, img_idx]) for i in topk_indices]
+
         top_sentences.append(list(zip(topk_texts, topk_scores)))
 
-    # Example: print or return the top 5 sentences for the first few images
     for i in range(min(3, len(top_sentences))):
         print(f"\nImage Pair {i+1}:")
         for rank, (sent, score) in enumerate(top_sentences[i], 1):
-            print(f"  {rank}. {sent}  (score={score:.4f})")
-        
+            print(f"  {rank}. {sent} (score={score:.4f})")
+
     R1 = tv_metrics["R1"]
     return R1
 
