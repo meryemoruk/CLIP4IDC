@@ -1088,11 +1088,11 @@ def main():
 
         _, _, _, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = sample
 
-        bef_image = bef_image.unsqueeze(0).to(device)
+        """        bef_image = bef_image.unsqueeze(0).to(device)
         aft_image = aft_image.unsqueeze(0).to(device)
         bef_semantic = bef_semantic.unsqueeze(0).to(device)
         aft_semantic = aft_semantic.unsqueeze(0).to(device)
-        image_mask = image_mask.unsqueeze(0).to(device)
+        image_mask = image_mask.unsqueeze(0).to(device)"""
 
         image_pair_batch = (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
 
