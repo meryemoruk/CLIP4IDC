@@ -1078,25 +1078,16 @@ def main():
         eval_epoch(args, model, test_dataloader, device)
 
     elif args.do_retrieval:
-        pair_index = 123
-        dataset = test_dataloader.dataset
+        target_idx = 10  # örnek: 10. batch'ı istiyorum
+        for i, batch in enumerate(test_dataloader):
+            if i != target_idx:
+                continue
+            batch = tuple(t.to(device) for t in batch)
+            _, _, _, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = batch
+            image_pair_batch = (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
+            find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5)
+            break
 
-        sample = dataset[pair_index]
-
-        # Dataloader dataset __getitem__ return format:
-        # (video_aug, video_raw, video_mask, bef_img, aft_img, bef_sem, aft_sem, img_mask)
-
-        _, _, _, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = sample
-
-        """        bef_image = bef_image.unsqueeze(0).to(device)
-        aft_image = aft_image.unsqueeze(0).to(device)
-        bef_semantic = bef_semantic.unsqueeze(0).to(device)
-        aft_semantic = aft_semantic.unsqueeze(0).to(device)
-        image_mask = image_mask.unsqueeze(0).to(device)"""
-
-        image_pair_batch = (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
-
-        find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5)
 
 
 
