@@ -906,11 +906,18 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
                 print(f"\n🖼 Image Pair {i}:")
                 for rank, idx in enumerate(idx_list, start=1):
                     sentence = mergedJson["images"][idx//5]["sentences"][idx-(idx//5)*5]["raw"]
-                    print(str(i)+" Sentence:" + sentence + " id: " + str(idx))
+                    print(str(rank)+" Sentence:" + sentence + " id: " + str(idx))
                     #sentence = text_list[idx]        # ✅ gerçek cümle
                     #score = sim[i, idx].item()       # ✅ benzerlik
                     #print(f"  {rank}. {sentence} (sim={score:.4f})")"""
-        print(type(bef_image))
+
+        import cv2
+        from matplotlib import pyplot as plt
+
+        img = cv2.cvtColor(bef_image, cv2.COLOR_BGR2RGB)
+
+        plt.imshow(img)
+        plt.axis('off')
 
 
 
