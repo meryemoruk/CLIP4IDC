@@ -683,6 +683,7 @@ def print_topk_texts(topk_indices, test_dataloader):
 
 
 def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
+    import numpy as np
     if hasattr(model, "module"):
         model = model.module
 
@@ -695,22 +696,27 @@ def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddi
 
             input_ids, input_mask, segment_ids, *_ = batch
 
-            # (B, L, D)
+            # (B, L, D) or (B, D, L)
             sequence_output, _ = model.get_sequence_output(
                 input_ids,
                 segment_ids,
                 input_mask,
             )
 
-            # ✅ mask-aware mean pooling  →  (B, D)
+            # ✅ Eğer çıktı (B, D, L) ise → (B, L, D)'ye çevir
+            if sequence_output.shape[1] != input_mask.shape[1]:
+                sequence_output = sequence_output.transpose(1, 2)
+
+            # (B, L, D)
             mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
+
+            # ✅ Padding'i dışla
             sequence_output = sequence_output * mask
             text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)  # (B, D)
 
             all_text_embeddings.append(text_emb.cpu().numpy())
 
-    import numpy as np
-    all_text_embeddings = np.vstack(all_text_embeddings)   # ✅ artık hepsi (N, D)
+    all_text_embeddings = np.vstack(all_text_embeddings)
     np.save(save_path, all_text_embeddings)
     print(f"✅ Text embeddings saved to {save_path}")
 
