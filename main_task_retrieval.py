@@ -839,8 +839,23 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         image_pair = torch.cat([bef_image, aft_image], 1)
         semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
 
-        image_embedding, _ = model.get_visual_output(image_pair, semantic_pair, image_mask)
         # image_embedding: (B, T_frames, D_vis)  — kullandığınız modelde T_frames=1 olabilir
+
+        image_embedding, _ = model.get_visual_output(image_pair, semantic_pair, image_mask)
+
+        # 🔥 EKLE → embed’in kaç boyutlu olduğuna bak
+        if image_embedding.dim() == 3:
+            # (B, T, D) → videoda frame ortalaması
+            image_embedding = image_embedding.mean(dim=1)
+        elif image_embedding.dim() == 2:
+            # (B, D) → hiçbir şey yapma
+            pass
+        elif image_embedding.dim() == 1:
+            # (D,) → batch boyutu yok → batch=1 gibi davran
+            image_embedding = image_embedding.unsqueeze(0)
+        else:
+            raise RuntimeError(f"Beklenmeyen image embedding shape: {image_embedding.shape}")
+
         image_embedding = image_embedding.mean(dim=1)  # (B, D_vis)
 
         # Eğer modelde visual proj varsa onu uygula ki D_vis -> D_embed olsun (text_embeddings ile eşleşecek)
