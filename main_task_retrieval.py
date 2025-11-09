@@ -925,7 +925,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
                 print(f"\n🖼 Image Pair {i}:")
                 for rank, idx in enumerate(idx_list, start=1):
                     sentence = mergedJson["images"][idx//5]["sentences"][idx-(idx//5)*5]["raw"]
-                    print(sentence)
+                    print(sentence + "id: " + str(idx))
                     #sentence = text_list[idx]        # ✅ gerçek cümle
                     #score = sim[i, idx].item()       # ✅ benzerlik
                     #print(f"  {rank}. {sentence} (sim={score:.4f})")"""
