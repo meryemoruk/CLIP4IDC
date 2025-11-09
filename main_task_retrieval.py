@@ -906,7 +906,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
 
         tokenizer = SimpleTokenizer()  # tokenizer yükle
 
-        print(text_list)
+        print(dir(test_dataloader.dataset))
 
         """for i, idx_list in enumerate(topk_indices):
             print(f"\n🖼 Image Pair {i}:")
