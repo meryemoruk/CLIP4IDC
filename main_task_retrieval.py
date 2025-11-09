@@ -902,12 +902,18 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
             text_list = [f"Sentence {i}" for i in range(text_embeddings.shape[0])]
 
 
+        from modules.tokenization_clip import SimpleTokenizer  # model içinde bu var
+
+        tokenizer = SimpleTokenizer()  # tokenizer yükle
+
         for i, idx_list in enumerate(topk_indices):
             print(f"\n🖼 Image Pair {i}:")
             for rank, idx in enumerate(idx_list, start=1):
-                sentence = text_list[idx]   # ✅ dizinden metin alıyoruz
-                score = sim[i, idx].item()  # ✅ skoru al
+                token_ids = text_list[idx]            # token ID listesi
+                sentence = tokenizer.decode(token_ids)  # ✅ gerçek cümleyi al
+                score = sim[i, idx].item()
                 print(f"  {rank}. {sentence} (sim={score:.4f})")
+
 
     return topk_indices
 
