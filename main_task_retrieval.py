@@ -901,6 +901,13 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         else:
             text_list = [f"Sentence {i}" for i in range(text_embeddings.shape[0])]
 
+        # ✅ Sentences correctly flattened to match embeddings order
+        sent_dict = test_dataloader.dataset.sentences_dict
+        text_list = []
+        for key in sorted(sent_dict.keys()):   # key = image pair index
+            text_list.extend(sent_dict[key])   # append its 5 sentences
+
+
 
         from modules.tokenization_clip import SimpleTokenizer  # model içinde bu var
 
@@ -908,13 +915,13 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
 
         print(dir(test_dataloader.dataset))
 
-        """for i, idx_list in enumerate(topk_indices):
+        for i, idx_list in enumerate(topk_indices):
             print(f"\n🖼 Image Pair {i}:")
             for rank, idx in enumerate(idx_list, start=1):
-                token_ids = text_list[idx]            # token ID listesi
-                sentence = tokenizer.decode(token_ids)  # ✅ gerçek cümleyi al
-                score = sim[i, idx].item()
-                print(f"  {rank}. sentence: {sentence} (sim={score:.4f})")"""
+                sentence = text_list[idx]        # ✅ gerçek cümle
+                score = sim[i, idx].item()       # ✅ benzerlik
+                print(f"  {rank}. {sentence} (sim={score:.4f})")
+
 
 
     return topk_indices
