@@ -696,23 +696,31 @@ def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddi
 
             input_ids, input_mask, segment_ids, *_ = batch
 
-            # (B, L, D) or (B, D, L)
             sequence_output, _ = model.get_sequence_output(
                 input_ids,
                 segment_ids,
                 input_mask,
             )
 
-            # ✅ Eğer çıktı (B, D, L) ise → (B, L, D)'ye çevir
-            if sequence_output.shape[1] != input_mask.shape[1]:
-                sequence_output = sequence_output.transpose(1, 2)
+            # ✅ Eğer çıktı (B, D) ise → zaten pooled → direk kullan
+            if sequence_output.dim() == 2:
+                text_emb = sequence_output  # (B, D)
 
-            # (B, L, D)
-            mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
+            # ✅ Eğer çıktı (B, L, D) ise → normal pooling
+            elif sequence_output.dim() == 3:
+                mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
+                sequence_output = sequence_output * mask
+                text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)
 
-            # ✅ Padding'i dışla
-            sequence_output = sequence_output * mask
-            text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)  # (B, D)
+            # ✅ Eğer çıktı (B, D, L) ise → önce transpose → sonra pooling
+            elif sequence_output.dim() == 3 and sequence_output.shape[1] != input_mask.shape[1]:
+                sequence_output = sequence_output.transpose(1, 2)  # (B, L, D)
+                mask = input_mask.unsqueeze(-1).float()
+                sequence_output = sequence_output * mask
+                text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)
+
+            else:
+                raise ValueError(f"Beklenmeyen text embedding şekli: {sequence_output.shape}")
 
             all_text_embeddings.append(text_emb.cpu().numpy())
 
