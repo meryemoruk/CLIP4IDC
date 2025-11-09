@@ -912,7 +912,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
                 token_ids = text_list[idx]            # token ID listesi
                 #sentence = tokenizer.decode(token_ids)  # ✅ gerçek cümleyi al
                 score = sim[i, idx].item()
-                print(f"  {rank}. sentence {token_ids} (sim={score:.4f})")
+                print(f"  {rank}. sentence {token_ids[8:]} (sim={score:.4f})")
 
 
     return topk_indices
