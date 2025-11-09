@@ -892,21 +892,12 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
 
         topk_indices = torch.topk(sim, k=topk, dim=1).indices.cpu().numpy()
 
-        """if hasattr(test_dataloader.dataset, "texts"):
-            text_list = test_dataloader.dataset.texts
-        elif hasattr(test_dataloader.dataset, "sentences"):
-            text_list = test_dataloader.dataset.sentences
-        elif hasattr(test_dataloader.dataset, "captions"):
-            text_list = test_dataloader.dataset.captions
-        else:
-            text_list = [f"Sentence {i}" for i in range(text_embeddings.shape[0])]
-
+        """
         # ✅ Sentences correctly flattened to match embeddings order
         sent_dict = test_dataloader.dataset.sentences_dict
         for i in range(len(sent_dict)):
             print(sent_dict[i])"""
         
-        print(type(test_dataloader.dataset.sentence_num))
         """text_list = []
         for key in sorted(sent_dict.keys()):   # key = image pair index
             text_list.extend(sent_dict[key])   # append its 5 sentences"""
@@ -915,16 +906,17 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
 
         """from modules.tokenization_clip import SimpleTokenizer  # model içinde bu var
 
-        tokenizer = SimpleTokenizer()  # tokenizer yükle
+        tokenizer = SimpleTokenizer()  # tokenizer yükle"""
 
-        print(dir(test_dataloader.dataset))
+        #print(dir(test_dataloader.dataset))
 
         for i, idx_list in enumerate(topk_indices):
             print(f"\n🖼 Image Pair {i}:")
             for rank, idx in enumerate(idx_list, start=1):
-                sentence = text_list[idx]        # ✅ gerçek cümle
-                score = sim[i, idx].item()       # ✅ benzerlik
-                print(f"  {rank}. {sentence} (sim={score:.4f})")"""
+                print(idx)
+                #sentence = text_list[idx]        # ✅ gerçek cümle
+                #score = sim[i, idx].item()       # ✅ benzerlik
+                #print(f"  {rank}. {sentence} (sim={score:.4f})")"""
 
 
 
