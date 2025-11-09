@@ -897,25 +897,6 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
 
         topk_indices = torch.topk(sim, k=topk, dim=1).indices.cpu().numpy()
 
-        
-
-        """
-        # ✅ Sentences correctly flattened to match embeddings order
-        sent_dict = test_dataloader.dataset.sentences_dict
-        for i in range(len(sent_dict)):
-            print(sent_dict[i])"""
-        
-        """text_list = []
-        for key in sorted(sent_dict.keys()):   # key = image pair index
-            text_list.extend(sent_dict[key])   # append its 5 sentences"""
-
-
-
-        """from modules.tokenization_clip import SimpleTokenizer  # model içinde bu var
-
-        tokenizer = SimpleTokenizer()  # tokenizer yükle"""
-
-        #print(dir(test_dataloader.dataset))
         import json
 
         with open("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json", "r") as f:
@@ -925,10 +906,11 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
                 print(f"\n🖼 Image Pair {i}:")
                 for rank, idx in enumerate(idx_list, start=1):
                     sentence = mergedJson["images"][idx//5]["sentences"][idx-(idx//5)*5]["raw"]
-                    print(sentence + "id: " + str(idx))
+                    print(str(i)+" Sentence:" + sentence + " id: " + str(idx))
                     #sentence = text_list[idx]        # ✅ gerçek cümle
                     #score = sim[i, idx].item()       # ✅ benzerlik
                     #print(f"  {rank}. {sentence} (sim={score:.4f})")"""
+        print(type(bef_image))
 
 
 
