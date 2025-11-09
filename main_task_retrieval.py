@@ -892,7 +892,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
 
         topk_indices = torch.topk(sim, k=topk, dim=1).indices.cpu().numpy()
 
-        if hasattr(test_dataloader.dataset, "texts"):
+        """if hasattr(test_dataloader.dataset, "texts"):
             text_list = test_dataloader.dataset.texts
         elif hasattr(test_dataloader.dataset, "sentences"):
             text_list = test_dataloader.dataset.sentences
@@ -904,7 +904,9 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         # ✅ Sentences correctly flattened to match embeddings order
         sent_dict = test_dataloader.dataset.sentences_dict
         for i in range(len(sent_dict)):
-            print(sent_dict[i])
+            print(sent_dict[i])"""
+        
+        print(test_dataloader.dataset.image_num)
         """text_list = []
         for key in sorted(sent_dict.keys()):   # key = image pair index
             text_list.extend(sent_dict[key])   # append its 5 sentences"""
