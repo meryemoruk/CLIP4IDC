@@ -910,9 +910,9 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
             print(f"\n🖼 Image Pair {i}:")
             for rank, idx in enumerate(idx_list, start=1):
                 token_ids = text_list[idx]            # token ID listesi
-                #sentence = tokenizer.decode(token_ids)  # ✅ gerçek cümleyi al
+                sentence = tokenizer.decode(token_ids[9:])  # ✅ gerçek cümleyi al
                 score = sim[i, idx].item()
-                print(f"  {rank}. sentence {token_ids[8:]} (sim={score:.4f})")
+                print(f"  {rank}. sentence: {sentence} (sim={score:.4f})")
 
 
     return topk_indices
