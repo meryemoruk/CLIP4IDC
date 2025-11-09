@@ -906,7 +906,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         for i in range(len(sent_dict)):
             print(sent_dict[i])"""
         
-        print(test_dataloader.dataset.image_num)
+        print(type(test_dataloader.dataset.image_num))
         """text_list = []
         for key in sorted(sent_dict.keys()):   # key = image pair index
             text_list.extend(sent_dict[key])   # append its 5 sentences"""
