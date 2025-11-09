@@ -918,7 +918,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         #print(dir(test_dataloader.dataset))
         import json
 
-        with open(jsonPath, "r") as f:
+        with open("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json", "r") as f:
             mergedJson = json.load(f)   # data is now a dict
 
             for i, idx_list in enumerate(topk_indices):
