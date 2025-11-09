@@ -841,8 +841,6 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
     with torch.no_grad():
         bef_image, aft_image, bef_semantic, aft_semantic, image_mask = image_pair_batch
 
-        import matplotlib
-        matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
         bef_img = bef_image[0].detach().cpu().permute(1,2,0).numpy()
