@@ -856,7 +856,6 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         else:
             raise RuntimeError(f"Beklenmeyen image embedding shape: {image_embedding.shape}")
 
-        image_embedding = image_embedding.mean(dim=1)  # (B, D_vis)
 
         # Eğer modelde visual proj varsa onu uygula ki D_vis -> D_embed olsun (text_embeddings ile eşleşecek)
         D_img = image_embedding.shape[1]
