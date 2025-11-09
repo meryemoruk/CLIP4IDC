@@ -29,7 +29,7 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--do_pretrain", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.") 
-    parser.add_argument("--do_retieval", action="store_true")
+    parser.add_argument("--do_retrieval", action="store_true")
 
     parser.add_argument("--data_path", type=str, default="data/datatype", help="data file path")
     parser.add_argument("--features_path", type=str, default="data/datatype/images", help="feature path")
