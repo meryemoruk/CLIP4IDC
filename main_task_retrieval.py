@@ -682,84 +682,215 @@ def print_topk_texts(topk_indices, test_dataloader):
             print(f"  {rank}. {text_list[idx]}")
 
 
+def _get_clip_projection_dims(model):
+    """
+    Model içinde varsa clip text/visual projection katmanlarını döndürür.
+    Dönen tuple: (has_text_proj, text_proj_tensor, has_visual_proj, visual_proj_tensor)
+    text_proj_tensor shape: (D_text, D_embed)  (torch.Tensor or None)
+    visual_proj_tensor shape: (D_vis, D_embed) (torch.Tensor or None)
+    """
+    text_proj = None
+    vis_proj = None
+    has_text = False
+    has_vis = False
+
+    if hasattr(model, "clip"):
+        clip = model.clip
+        # Common names used in CLIP-like models
+        for name in ("text_projection", "text_proj", "proj_text", "text_proj.weight"):
+            if hasattr(clip, name):
+                text_proj = getattr(clip, name)
+                has_text = True
+                break
+        # If it's a parameter inside nn.Module (e.g. clip.text_projection is nn.Parameter)
+        if not has_text:
+            # try to find attribute that endswith text_projection
+            for n, p in getattr(clip, "named_parameters", lambda: [])():
+                if "text_projection" in n or "text_proj" in n:
+                    text_proj = p
+                    has_text = True
+                    break
+
+        for name in ("visual_projection", "visual_proj", "proj_visual", "visual_projection.weight"):
+            if hasattr(clip, name):
+                vis_proj = getattr(clip, name)
+                has_vis = True
+                break
+        if not has_vis:
+            for n, p in getattr(clip, "named_parameters", lambda: [])():
+                if "visual_projection" in n or "visual_proj" in n:
+                    vis_proj = p
+                    has_vis = True
+                    break
+
+    return has_text, text_proj, has_vis, vis_proj
+
+
+def _apply_projection(vec: torch.Tensor, proj):
+    """
+    vec: (B, D_in)
+    proj: can be nn.Parameter or nn.Module or numpy array -> return vec @ proj (B, D_out)
+    """
+    if proj is None:
+        return vec
+    if isinstance(proj, torch.nn.Parameter) or isinstance(proj, torch.Tensor):
+        # proj shape expected (D_in, D_out) or (D_out, D_in) — try to detect
+        p = proj
+        if p.ndim == 1:
+            # unexpected, just return
+            return vec
+        if p.shape[0] == vec.shape[1]:
+            # (D_in, D_out)
+            return vec @ p.to(vec.dtype).to(vec.device)
+        elif p.shape[1] == vec.shape[1]:
+            # (D_out, D_in) -> do vec @ p.T
+            return vec @ p.T.to(vec.dtype).to(vec.device)
+        else:
+            # shapes incompatible
+            raise RuntimeError(f"Projection weight shape {tuple(p.shape)} incompatible with vec dim {vec.shape[1]}")
+    elif hasattr(proj, "forward"):
+        return proj(vec)
+    else:
+        return vec
+
+
 def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
-    import numpy as np
+    """
+    Text gömmelerini saklar. Mümkünse CLIP ortak embedding boyutuna projekte eder.
+    Kaydedilen shape: (N_texts, D_embed)  (numpy float32)
+    """
     if hasattr(model, "module"):
         model = model.module
 
     model.eval()
     all_text_embeddings = []
+    has_text_proj, text_proj, _, _ = _get_clip_projection_dims(model)
 
     with torch.no_grad():
         for batch in test_dataloader:
             batch = tuple(t.to(device) for t in batch)
-
             input_ids, input_mask, segment_ids, *_ = batch
 
+            # sequence_output: (B, L, D_text)
             sequence_output, _ = model.get_sequence_output(
                 input_ids,
                 segment_ids,
                 input_mask,
             )
 
-            # ✅ Eğer çıktı (B, D) ise → zaten pooled → direk kullan
-            if sequence_output.dim() == 2:
-                text_emb = sequence_output  # (B, D)
+            # Pool: öncelikle CLIP standardına göre [CLS] tokeni varsa onu dene, yoksa mask-aware mean pooling
+            # Eğer sequence_output shape (B, L, D), CLS token genelde index 0 olur.
+            pooled = None
+            try:
+                pooled = sequence_output[:, 0, :]  # (B, D_text)
+            except Exception:
+                pooled = None
 
-            # ✅ Eğer çıktı (B, L, D) ise → normal pooling
-            elif sequence_output.dim() == 3:
+            if pooled is None or pooled.shape[-1] == 0:
+                # fallback mask-aware mean pooling
                 mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
-                sequence_output = sequence_output * mask
-                text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)
+                sequence_output_masked = sequence_output * mask
+                pooled = sequence_output_masked.sum(dim=1) / (mask.sum(dim=1).clamp(min=1e-9))
 
-            # ✅ Eğer çıktı (B, D, L) ise → önce transpose → sonra pooling
-            elif sequence_output.dim() == 3 and sequence_output.shape[1] != input_mask.shape[1]:
-                sequence_output = sequence_output.transpose(1, 2)  # (B, L, D)
-                mask = input_mask.unsqueeze(-1).float()
-                sequence_output = sequence_output * mask
-                text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)
+            # text proj var ise onu uygula (öteleme/lineer)
+            if has_text_proj:
+                try:
+                    pooled = _apply_projection(pooled, text_proj)
+                except Exception as e:
+                    # projection uygulanamazsa uyarı ver, pooled kullan
+                    print(f"[Warning] text projection uygulanamadı: {str(e)}. Projeksiyon atlandı.")
+            # pooled şimdi (B, D_embed) veya (B, D_text) (en azından sabit width per batch)
 
-            else:
-                raise ValueError(f"Beklenmeyen text embedding şekli: {sequence_output.shape}")
+            all_text_embeddings.append(pooled.cpu().numpy().astype(np.float32))
 
-            all_text_embeddings.append(text_emb.cpu().numpy())
-
-    all_text_embeddings = np.vstack(all_text_embeddings)
+    # Kontrol: tüm batchlerin column sayısı aynı mı?
+    shapes = [arr.shape[1] for arr in all_text_embeddings]
+    if len(set(shapes)) != 1:
+        raise RuntimeError(f"Text embedding batch-width mismatch: found widths {set(shapes)}. "
+                           "Projeksiyon uygulanmalı veya model farklı batchlerde farklı dim döndürüyor.")
+    all_text_embeddings = np.vstack(all_text_embeddings)   # (N, D)
     np.save(save_path, all_text_embeddings)
-    print(f"✅ Text embeddings saved to {save_path}")
+    print(f"✅ Text embeddings saved to {save_path} (shape: {all_text_embeddings.shape})")
 
 
 def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5):
+    """
+    Kaydedilmiş text embeddinglerle verilen image_pair_batch için top-k textleri döndürür.
+    image_pair_batch: (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
+    """
     if hasattr(model, "module"):
         model = model.module
-    
+
     if not os.path.exists(embeddings_path):
         print("Dosya yok kayıt alınıyor...")
         save_text_embeddings(model, test_dataloader, device, embeddings_path)
 
-    text_embeddings = np.load(embeddings_path)  # (N_texts, D)
-    text_embeddings_torch = torch.tensor(text_embeddings, device=device)  # (N, D)
-    
+    text_embeddings = np.load(embeddings_path)  # (N, D_text_emb)
+    # convert to torch
+    text_embeddings_torch = torch.tensor(text_embeddings, device=device)  # (N, Dt)
+
+    # detect projeksiyonlar
+    has_text_proj, text_proj, has_vis_proj, vis_proj = _get_clip_projection_dims(model)
 
     model.eval()
     with torch.no_grad():
-        # batch: (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
         bef_image, aft_image, bef_semantic, aft_semantic, image_mask = image_pair_batch
 
         image_pair = torch.cat([bef_image, aft_image], 1)
         semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
 
         image_embedding, _ = model.get_visual_output(image_pair, semantic_pair, image_mask)
-        image_embedding = image_embedding.mean(dim=1)  # (B, D)
+        # image_embedding: (B, T_frames, D_vis)  — kullandığınız modelde T_frames=1 olabilir
+        image_embedding = image_embedding.mean(dim=1)  # (B, D_vis)
 
-        # similarity = dot-product
-        sim = torch.matmul(image_embedding, text_embeddings_torch.T)  # (B, N)
+        # Eğer modelde visual proj varsa onu uygula ki D_vis -> D_embed olsun (text_embeddings ile eşleşecek)
+        D_img = image_embedding.shape[1]
+        D_text = text_embeddings_torch.shape[1]
+        if D_img != D_text:
+            # attempt automatic projeksiyon: varsa model.clip.visual_projection uygula,
+            # yoksa model.clip.text_projection'in tersini kullanarak textleri projekte etmeye çalışmayız (tehlikeli),
+            # onun yerine uyarı ver ve hata fırlat.
+            applied = False
+            if has_vis_proj:
+                try:
+                    image_embedding = _apply_projection(image_embedding, vis_proj)
+                    applied = True
+                except Exception as e:
+                    print(f"[Warning] visual projection uygulanamadı: {e}")
+            # ikinci şans: eğer text_proj varsa textleri ona göre değil de image boyutuna projekte edelim (daha güvenli değil ama deneyebiliriz)
+            if not applied and has_text_proj:
+                try:
+                    # text_proj: (D_text_or_Din, D_embed) — dönüşümün tersini otomatik yapmak genelde mümkün değil.
+                    # Bu yüzden text embeddingleri tekrar yükleyip model tarafında üretmek en güvenli çözüm.
+                    raise RuntimeError(
+                        "Görsel ve metin gömme boyutları farklı ve otomatik güvenli dönüşüm bulunamadı.\n"
+                        "En güvenli çözüm: metin gömmelerini tekrar `save_text_embeddings` ile modelin text projeksiyonunu kullanarak kaydetmektir.\n"
+                        "Veya modelde visual_projection parametresi ekleyip görsel gömmeyi aynı embed dimine projekte edin."
+                    )
+                except RuntimeError:
+                    raise
+            # son kontrol
+            if image_embedding.shape[1] != text_embeddings_torch.shape[1]:
+                raise RuntimeError(f"Görsel embed boyutu ({image_embedding.shape[1]}) ile kaydedilmiş metin embed boyutu ({text_embeddings_torch.shape[1]}) hala eşleşmiyor.")
+
+        # sim: (B, N)
+        sim = torch.matmul(image_embedding, text_embeddings_torch.T)
 
         topk_indices = torch.topk(sim, k=topk, dim=1).indices.cpu().numpy()
 
-        print_topk_texts(topk_indices, test_dataloader)
+        # print
+        if hasattr(test_dataloader.dataset, "texts"):
+            text_list = test_dataloader.dataset.texts
+        else:
+            text_list = [f"Sentence {i}" for i in range(text_embeddings.shape[0])]
+
+        for i, idx_list in enumerate(topk_indices):
+            print(f"\n🖼 Image Pair {i}:")
+            for rank, idx in enumerate(idx_list, start=1):
+                print(f"  {rank}. {text_list[idx]} (sim={sim[i, idx].item():.4f})")
 
     return topk_indices
+
 
 
 
