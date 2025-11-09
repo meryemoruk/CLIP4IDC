@@ -683,8 +683,6 @@ def print_topk_texts(topk_indices, test_dataloader):
 
 
 def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
-
-
     if hasattr(model, "module"):
         model = model.module
 
@@ -697,25 +695,25 @@ def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddi
 
             input_ids, input_mask, segment_ids, *_ = batch
 
-            # Sequence text output (T x D)
+            # (B, L, D)
             sequence_output, _ = model.get_sequence_output(
                 input_ids,
                 segment_ids,
                 input_mask,
             )
 
-            # Ortalama pooling (isteğe göre max da olabilir)
-            text_emb = sequence_output.mean(dim=1)  # (batch, dim)
+            # ✅ mask-aware mean pooling  →  (B, D)
+            mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
+            sequence_output = sequence_output * mask
+            text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)  # (B, D)
 
             all_text_embeddings.append(text_emb.cpu().numpy())
 
     import numpy as np
-    all_text_embeddings = np.vstack(all_text_embeddings)   # (N_texts, D)
+    all_text_embeddings = np.vstack(all_text_embeddings)   # ✅ artık hepsi (N, D)
     np.save(save_path, all_text_embeddings)
-
     print(f"✅ Text embeddings saved to {save_path}")
 
-import numpy as np
 
 def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5):
     if hasattr(model, "module"):
