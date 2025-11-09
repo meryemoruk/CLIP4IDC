@@ -845,31 +845,22 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
-        # ---- SHOW IMAGE PAIRS IN COLAB ----
-        # Take only the first item in the batch to display (index 0)
-        bef_img = bef_image[0].detach().cpu()
-        aft_img = aft_image[0].detach().cpu()
+        bef_img = bef_image[0].detach().cpu().permute(1,2,0).numpy()
+        aft_img = aft_image[0].detach().cpu().permute(1,2,0).numpy()
 
-        # Convert (C,H,W) -> (H,W,C)
-        bef_img = bef_img.permute(1, 2, 0).numpy()
-        aft_img = aft_img.permute(1, 2, 0).numpy()
-
-        # Normalize if needed (if values are in [-1,1], convert to [0,1])
         if bef_img.min() < 0 or bef_img.max() > 1:
             bef_img = (bef_img - bef_img.min()) / (bef_img.max() - bef_img.min())
             aft_img = (aft_img - aft_img.min()) / (aft_img.max() - aft_img.min())
 
         plt.figure(figsize=(8,4))
-        plt.subplot(1,2,1)
-        plt.title("Before Image")
-        plt.imshow(bef_img)
-        plt.axis("off")
+        plt.subplot(1,2,1); plt.title("Before"); plt.imshow(bef_img); plt.axis("off")
+        plt.subplot(1,2,2); plt.title("After"); plt.imshow(aft_img); plt.axis("off")
 
-        plt.subplot(1,2,2)
-        plt.title("After Image")
-        plt.imshow(aft_img)
-        plt.axis("off")
-        plt.show()
+        save_path = f"/content/CLIP4IDC/output/preview_{i}.png"
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print("✅ Saved preview image to:", save_path)
+        plt.close()
+
         # ------------------------------------
 
 
