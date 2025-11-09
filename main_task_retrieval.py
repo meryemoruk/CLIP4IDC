@@ -28,7 +28,8 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--do_pretrain", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
-    parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.")
+    parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.") 
+    parser.add_argument("--do_retieval", action="store_true")
 
     parser.add_argument("--data_path", type=str, default="data/datatype", help="data file path")
     parser.add_argument("--features_path", type=str, default="data/datatype/images", help="feature path")
@@ -124,9 +125,9 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
         raise ValueError(
             "Invalid gradient_accumulation_steps parameter: " f"{args.gradient_accumulation_steps}, should be >= 1",
         )
-    if not args.do_train and not args.do_eval:
+    if not args.do_train and not args.do_eval and not args.do_retrieval:
         raise ValueError(
-            "At least one of `do_train` or `do_eval` must be True.",
+            "At least one of `do_train` or `do_eval` or `do_retrieval` must be True.",
         )
 
     args.batch_size = int(args.batch_size / args.gradient_accumulation_steps)
@@ -669,6 +670,85 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
+def print_topk_texts(topk_indices, test_dataloader):
+    if hasattr(test_dataloader.dataset, "texts"):
+        text_list = test_dataloader.dataset.texts
+    else:
+        text_list = [f"Sentence {i}" for i in range(len(topk_indices))]
+
+    for i, idx_list in enumerate(topk_indices):
+        print(f"\n🖼 Image Pair {i}:")
+        for rank, idx in enumerate(idx_list, start=1):
+            print(f"  {rank}. {text_list[idx]}")
+
+
+def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
+
+
+    if hasattr(model, "module"):
+        model = model.module
+
+    model.eval()
+    all_text_embeddings = []
+
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = tuple(t.to(device) for t in batch)
+
+            input_ids, input_mask, segment_ids, *_ = batch
+
+            # Sequence text output (T x D)
+            sequence_output, _ = model.get_sequence_output(
+                input_ids,
+                segment_ids,
+                input_mask,
+            )
+
+            # Ortalama pooling (isteğe göre max da olabilir)
+            text_emb = sequence_output.mean(dim=1)  # (batch, dim)
+
+            all_text_embeddings.append(text_emb.cpu().numpy())
+
+    import numpy as np
+    all_text_embeddings = np.vstack(all_text_embeddings)   # (N_texts, D)
+    np.save(save_path, all_text_embeddings)
+
+    print(f"✅ Text embeddings saved to {save_path}")
+
+import numpy as np
+
+def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5):
+    if hasattr(model, "module"):
+        model = model.module
+    
+    if not os.path.exists(embeddings_path):
+        print("Dosya yok kayıt alınıyor...")
+        save_text_embeddings(model, test_dataloader, device, embeddings_path)
+
+    text_embeddings = np.load(embeddings_path)  # (N_texts, D)
+    text_embeddings_torch = torch.tensor(text_embeddings, device=device)  # (N, D)
+    
+
+    model.eval()
+    with torch.no_grad():
+        # batch: (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
+        bef_image, aft_image, bef_semantic, aft_semantic, image_mask = image_pair_batch
+
+        image_pair = torch.cat([bef_image, aft_image], 1)
+        semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
+
+        image_embedding, _ = model.get_visual_output(image_pair, semantic_pair, image_mask)
+        image_embedding = image_embedding.mean(dim=1)  # (B, D)
+
+        # similarity = dot-product
+        sim = torch.matmul(image_embedding, text_embeddings_torch.T)  # (B, N)
+
+        topk_indices = torch.topk(sim, k=topk, dim=1).indices.cpu().numpy()
+
+        print_topk_texts(topk_indices, test_dataloader)
+
+    return topk_indices
+
 
 
 
@@ -837,6 +917,17 @@ def main():
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
+
+    elif args.do_retrieval:
+        for batch in test_dataloader:
+            batch = tuple(t.to(device) for t in batch)
+
+            # Extract image pair parts manually
+            _, _, _, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = batch
+
+            image_pair_batch = (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
+
+            find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5)
 
 
 if __name__ == "__main__":
