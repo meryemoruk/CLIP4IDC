@@ -22,16 +22,21 @@ if torch.cuda.device_count() > 1:
     torch.distributed.init_process_group(backend="nccl")
 
 
-# Force a non-interactive backend for matplotlib in headless / distributed runs
-os.environ.setdefault("MPLBACKEND", "agg")
+# 1. Force the backend to 'agg' by OVERRIDING any existing value
+#    This MUST be done BEFORE importing matplotlib
+os.environ["MPLBACKEND"] = "agg"
 
+# 2. Now import matplotlib
 import matplotlib
-# ensure the backend is set (useful if matplotlib already read env earlier)
-try:
-    matplotlib.use(os.environ["MPLBACKEND"])
-except Exception:
-    matplotlib.use("agg")
 
+# 3. (Optional but recommended) Explicitly tell matplotlib to use 'agg'
+#    This ensures it's set, even if another library tried to import it first.
+try:
+    matplotlib.use("agg")
+except Exception:
+    pass # Handle potential errors if already set
+
+# 4. Import pyplot
 import matplotlib.pyplot as plt
 
 global logger
