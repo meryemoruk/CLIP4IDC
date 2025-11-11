@@ -693,6 +693,9 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
+
+
+
 def print_topk_texts(topk_indices, test_dataloader):
     if hasattr(test_dataloader.dataset, "texts"):
         text_list = test_dataloader.dataset.texts
@@ -703,7 +706,6 @@ def print_topk_texts(topk_indices, test_dataloader):
         print(f"\n🖼 Image Pair {i}:")
         for rank, idx in enumerate(idx_list, start=1):
             print(f"  {rank}. {text_list[idx]}")
-
 
 def _get_clip_projection_dims(model):
     """
@@ -748,7 +750,6 @@ def _get_clip_projection_dims(model):
 
     return has_text, text_proj, has_vis, vis_proj
 
-
 def _apply_projection(vec: torch.Tensor, proj):
     """
     vec: (B, D_in)
@@ -776,12 +777,13 @@ def _apply_projection(vec: torch.Tensor, proj):
     else:
         return vec
 
-
+"""
+old save 
 def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
     """
-    Text gömmelerini saklar. Mümkünse CLIP ortak embedding boyutuna projekte eder.
-    Kaydedilen shape: (N_texts, D_embed)  (numpy float32)
-    """
+    #Text gömmelerini saklar. Mümkünse CLIP ortak embedding boyutuna projekte eder.
+    #Kaydedilen shape: (N_texts, D_embed)  (numpy float32)
+"""
     if hasattr(model, "module"):
         model = model.module
 
@@ -833,8 +835,53 @@ def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddi
                            "Projeksiyon uygulanmalı veya model farklı batchlerde farklı dim döndürüyor.")
     all_text_embeddings = np.vstack(all_text_embeddings)   # (N, D)
     np.save(save_path, all_text_embeddings)
-    print(f"✅ Text embeddings saved to {save_path} (shape: {all_text_embeddings.shape})")
+    print(f"✅ Text embeddings saved to {save_path} (shape: {all_text_embeddings.shape})")"""
 
+def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
+    import numpy as np
+    if hasattr(model, "module"):
+        model = model.module
+
+    model.eval()
+    all_text_embeddings = []
+
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = tuple(t.to(device) for t in batch)
+
+            input_ids, input_mask, segment_ids, *_ = batch
+
+            sequence_output, _ = model.get_sequence_output(
+                input_ids,
+                segment_ids,
+                input_mask,
+            )
+
+            # ✅ Eğer çıktı (B, D) ise → zaten pooled → direk kullan
+            if sequence_output.dim() == 2:
+                text_emb = sequence_output  # (B, D)
+
+            # ✅ Eğer çıktı (B, L, D) ise → normal pooling
+            elif sequence_output.dim() == 3:
+                mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
+                sequence_output = sequence_output * mask
+                text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)
+
+            # ✅ Eğer çıktı (B, D, L) ise → önce transpose → sonra pooling
+            elif sequence_output.dim() == 3 and sequence_output.shape[1] != input_mask.shape[1]:
+                sequence_output = sequence_output.transpose(1, 2)  # (B, L, D)
+                mask = input_mask.unsqueeze(-1).float()
+                sequence_output = sequence_output * mask
+                text_emb = sequence_output.sum(dim=1) / mask.sum(dim=1)
+
+            else:
+                raise ValueError(f"Beklenmeyen text embedding şekli: {sequence_output.shape}")
+
+            all_text_embeddings.append(text_emb.cpu().numpy())
+
+    all_text_embeddings = np.vstack(all_text_embeddings)
+    np.save(save_path, all_text_embeddings)
+    print(f"✅ Text embeddings saved to {save_path}")
 
 def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5):
     """
@@ -945,6 +992,9 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
                     print(str(rank)+" Sentence:" + sentence + " score: "+ str(score) + " id: " + str(idx))
 
     return topk_indices
+
+
+
 
 
 def main():
