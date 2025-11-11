@@ -21,6 +21,19 @@ from dataloaders.data_dataloaders import DATALOADER_DICT
 if torch.cuda.device_count() > 1:
     torch.distributed.init_process_group(backend="nccl")
 
+
+# Force a non-interactive backend for matplotlib in headless / distributed runs
+os.environ.setdefault("MPLBACKEND", "agg")
+
+import matplotlib
+# ensure the backend is set (useful if matplotlib already read env earlier)
+try:
+    matplotlib.use(os.environ["MPLBACKEND"])
+except Exception:
+    matplotlib.use("agg")
+
+import matplotlib.pyplot as plt
+
 global logger
 
 jsonPath = ""
@@ -841,18 +854,7 @@ def find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, 
     with torch.no_grad():
         bef_image, aft_image, bef_semantic, aft_semantic, image_mask = image_pair_batch
 
-        import os
-        # Force a non-interactive backend for matplotlib in headless / distributed runs
-        os.environ.setdefault("MPLBACKEND", "agg")
-
-        import matplotlib
-        # ensure the backend is set (useful if matplotlib already read env earlier)
-        try:
-            matplotlib.use(os.environ["MPLBACKEND"])
-        except Exception:
-            matplotlib.use("agg")
-
-        import matplotlib.pyplot as plt
+        
 
         bef_img = bef_image[0].detach().cpu().permute(1,2,0).numpy()
         aft_img = aft_image[0].detach().cpu().permute(1,2,0).numpy()
