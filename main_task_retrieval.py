@@ -275,9 +275,11 @@ def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, 
 
     optimizer.zero_grad()
     write_debug("train_dataloader", train_dataloader)
+    first_write = True
     for step, batch in enumerate(train_dataloader):
-        write_debug("step in train block enumerating train dataloader", step)
-        write_debug("batch in train block enumerating train dataloader", batch)
+        write_debug("step train bloğunun içindeki", step, first_write)
+        write_debug("batch train bloğunun içindeki", batch, first_write)
+        first_write = False
         if n_gpu == 1:
             # multi-gpu does scattering it-self
             batch = tuple(t.to(device=device, non_blocking=True) for t in batch)
