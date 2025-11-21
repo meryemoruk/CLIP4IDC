@@ -18,6 +18,8 @@ from modules.optimization import BertAdam
 from util import parallel_apply, get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
 
+from exploringDebugging import write_debug
+
 if torch.cuda.device_count() > 1:
     torch.distributed.init_process_group(backend="nccl")
 
@@ -272,7 +274,10 @@ def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, 
     total_loss = 0
 
     optimizer.zero_grad()
+    write_debug("train_dataloader", train_dataloader)
     for step, batch in enumerate(train_dataloader):
+        write_debug("step in train block enumerating train dataloader", step)
+        write_debug("batch in train block enumerating train dataloader", batch)
         if n_gpu == 1:
             # multi-gpu does scattering it-self
             batch = tuple(t.to(device=device, non_blocking=True) for t in batch)
