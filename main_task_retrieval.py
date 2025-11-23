@@ -163,6 +163,7 @@ def init_model(args, device, n_gpu, local_rank):
 
     if args.init_model:
         model_state_dict = torch.load(args.init_model, map_location='cpu', weights_only=True)
+        write_debug("model sözlüğü", model_state_dict   )
     elif args.resume_model:
         model_state_dict = torch.load(args.resume_model, map_location='cpu', weights_only=True)
         logger.info("✅ Resume model state loaded successfully.")
@@ -325,6 +326,7 @@ def train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, 
 
 def _run_on_single_gpu(model, batch_list_t, batch_list_v, batch_sequence_output_list, batch_visual_output_list):
     sim_matrix = []
+    looping = True
     for idx1, b1 in enumerate(batch_list_t):
         input_mask, segment_ids, *_tmp = b1
         sequence_output = batch_sequence_output_list[idx1]
@@ -337,6 +339,8 @@ def _run_on_single_gpu(model, batch_list_t, batch_list_v, batch_sequence_output_
             each_row.append(b1b2_logits)
         each_row = np.concatenate(tuple(each_row), axis=-1)
         sim_matrix.append(each_row)
+        write_debug("benzerlik matrisi", sim_matrix, looping)
+        looping = False
     return sim_matrix
 
 def eval_epoch(args, model, test_dataloader, device, n_gpu):
