@@ -964,32 +964,32 @@ def accumulate_vector():
         all_aft_semantic.append(data['aft_semantic'])
         all_image_mask.append(data['image_mask'])
 
-        # 3. Hepsini tek bir büyük Tensör yap (Concatenate)
-        final_input_ids = torch.cat(all_input_ids, dim=0)
-        final_input_mask = torch.cat(all_input_mask, dim=0)
-        final_segment_ids = torch.cat(all_segment_ids, dim=0)
-        final_bef_image = torch.cat(all_bef_image, dim=0)
-        final_aft_image = torch.cat(all_aft_image, dim=0)
-        final_bef_semantic = torch.cat(all_bef_semantic, dim=0)
-        final_aft_semantic = torch.cat(all_aft_semantic, dim=0)
-        final_image_mask = torch.cat(all_image_mask, dim=0)
-        
+    # 3. Hepsini tek bir büyük Tensör yap (Concatenate)
+    final_input_ids = torch.cat(all_input_ids, dim=0)
+    final_input_mask = torch.cat(all_input_mask, dim=0)
+    final_segment_ids = torch.cat(all_segment_ids, dim=0)
+    final_bef_image = torch.cat(all_bef_image, dim=0)
+    final_aft_image = torch.cat(all_aft_image, dim=0)
+    final_bef_semantic = torch.cat(all_bef_semantic, dim=0)
+    final_aft_semantic = torch.cat(all_aft_semantic, dim=0)
+    final_image_mask = torch.cat(all_image_mask, dim=0)
+    
 
-        print("BİRLEŞTİRME TAMAMLANDI!")
-        print(f"Final Embedding Boyutu: {final_input_ids.shape}")
-        # Örn Çıktı: (6121, 77, 512)
+    print("BİRLEŞTİRME TAMAMLANDI!")
+    print(f"Final Embedding Boyutu: {final_input_ids.shape}")
+    # Örn Çıktı: (6121, 77, 512)
 
-        # İstersen bu BÜYÜK birleşmiş halini de tek dosya olarak saklayabilirsin
-        torch.save({
-            'input_ids': final_input_ids.detach().cpu(),
-            'input_mask': final_input_mask.detach().cpu(),
-            'segment_ids': final_segment_ids.detach().cpu(),
-            'bef_image': final_bef_image.detach().cpu(),
-            'aft_image': final_aft_image.detach().cpu(),
-            'bef_semantic': final_bef_semantic.detach().cpu(),
-            'aft_semantic': final_aft_semantic.detach().cpu(),
-            'image_mask': final_image_mask.detach().cpu()
-        }, "tum_veri_seti_birlestirilmis.pt")
+    # İstersen bu BÜYÜK birleşmiş halini de tek dosya olarak saklayabilirsin
+    torch.save({
+        'input_ids': final_input_ids.detach().cpu(),
+        'input_mask': final_input_mask.detach().cpu(),
+        'segment_ids': final_segment_ids.detach().cpu(),
+        'bef_image': final_bef_image.detach().cpu(),
+        'aft_image': final_aft_image.detach().cpu(),
+        'bef_semantic': final_bef_semantic.detach().cpu(),
+        'aft_semantic': final_aft_semantic.detach().cpu(),
+        'image_mask': final_image_mask.detach().cpu()
+    }, "tum_veri_seti_birlestirilmis.pt")
 
 def print_topk_texts(topk_indices, test_dataloader):
     if hasattr(test_dataloader.dataset, "texts"):
