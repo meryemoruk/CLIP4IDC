@@ -769,7 +769,7 @@ def eval_epoch(args, model, test_dataloader, device):
         dontLoop = True
         for bid, batch in enumerate(test_dataloader):
             logger.warning("Flag!!!!")
-            write_debug("length of batch", len(batch[0]), dontLoop, False)
+            write_debug("length of batch", len(batch[0]), False)
             dontLoop = False
             batch = tuple(t.to(device) for t in batch)
             
