@@ -470,17 +470,18 @@ def _run_on_single_gpu(
 
 def _run_on_single_gpu_retrieval(
     model,
-    caption_vector,
-    all_visual_vector,
-    sequence_output,
-    batch_visual_output_list,
+    list_t,
+    list_v,
+    sequence_output_list,
+    visual_output_list,
 ):
     sim_matrix = []
-    input_mask, segment_ids, *_tmp = caption_vector
+    input_mask, segment_ids, *_tmp = list_t
     each_row = []
-    for idx2, b2 in enumerate(all_visual_vector):
+    sequence_output = sequence_output_list
+    for idx2, b2 in enumerate(list_v):
         pair_mask, *_tmp = b2
-        visual_output = batch_visual_output_list[idx2]
+        visual_output = visual_output_list[idx2]
         b1b2_logits, *_tmp = model.get_similarity_logits(
             sequence_output,
             visual_output,
@@ -531,7 +532,7 @@ def eval_epoch(args, model, test_dataloader, device):
         # 1. cache the features
         # ----------------------------
         write_debug("test dataloader", test_dataloader, False)
-        write_debug("data set test dataloader'ın içindeki", test_dataloader.dataset, True)
+        write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, True)
         for bid, batch in enumerate(test_dataloader):
             batch = tuple(t.to(device) for t in batch)
 
@@ -1135,19 +1136,141 @@ def main():
 
     elif args.do_retrieval:
         #target_idx = 10  # örnek: 10. batch'ı istiyorum
-        visual_output, _ = model.get_visual_output(
-                        image_pair,
-                        semantic_pair,
-                        pair_mask,
+        cut_off_points_ = test_dataloader.dataset.cut_off_points
+        batch = tuple(t.to(device) for t in batch)
+
+        (
+            input_ids,
+            input_mask,
+            segment_ids,
+            bef_image,
+            aft_image,
+            bef_semantic,
+            aft_semantic,
+            image_mask,
+        ) = batch
+
+        list_t = []
+        list_v = []
+
+        image_pair = torch.cat([bef_image, aft_image], 1)
+        semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
+        multi_sentence_ = True
+        if multi_sentence_:
+            # multi-sentences retrieval means: one pair has two or more
+            # descriptions.
+            b, *_t = image_pair.shape
+            sequence_output, _ = model.get_sequence_output(
+                input_ids,
+                segment_ids,
+                input_mask,
+            )
+
+            list_t.append(
+                (
+                    input_mask,
+                    segment_ids,
+                ),
+            )
+
+            s_, e_ = total_pair_num, total_pair_num + b
+            filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
+
+            if len(filter_inds) > 0:
+                image_pair, pair_mask = (
+                    image_pair[filter_inds, ...],
+                    image_mask[filter_inds, ...],
+                )
+
+                semantic_pair, pair_mask = (
+                    semantic_pair[filter_inds, ...],
+                    image_mask[filter_inds, ...],
+                )
+                visual_output, _ = model.get_visual_output(
+                    image_pair,
+                    semantic_pair,
+                    pair_mask,
+                )
+
+                list_v.append((pair_mask,))
+            total_pair_num += b
+        
+        sim_matrix = _run_on_single_gpu_retrieval(
+            model,
+            list_t,
+            list_v,
+            sequence_output,
+            visual_output)
+        sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
+
+        if multi_sentence_:
+            cut_off_points2len_ = [itm + 1 for itm in cut_off_points_]
+            max_length = max(
+                [
+                    e_ - s_
+                    for s_, e_ in zip(
+                        [0] + cut_off_points2len_[:-1],
+                        cut_off_points2len_,
                     )
-        for i, batch in enumerate(test_dataloader):
+                ],
+            )
+            sim_matrix_new = []
+            for s_, e_ in zip([0] + cut_off_points2len_[:-1], cut_off_points2len_):
+                sim_matrix_new.append(
+                    np.concatenate(
+                        (
+                            sim_matrix[s_:e_],
+                            np.full(
+                                (max_length - e_ + s_, sim_matrix.shape[1]),
+                                -np.inf,
+                            ),
+                        ),
+                        axis=0,
+                    ),
+                )
+            sim_matrix = np.stack(tuple(sim_matrix_new), axis=0)
+            logger.info(
+                "after reshape, sim matrix size: {} x {} x {}".format(
+                    sim_matrix.shape[0],
+                    sim_matrix.shape[1],
+                    sim_matrix.shape[2],
+                ),
+            )
+
+            tv_metrics = tensor_text_to_video_metrics(sim_matrix)
+            vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
+
+        logger.info("Text-to-Image-Pair:")
+        logger.info(
+            "\t>>>  R@1: {:.1f} - R@5: {:.1f} - R@10: {:.1f} - Median R: {:.1f} - "
+            "Mean R: {:.1f}".format(
+                tv_metrics["R1"],
+                tv_metrics["R5"],
+                tv_metrics["R10"],
+                tv_metrics["MR"],
+                tv_metrics["MeanR"],
+            ),
+        )
+        logger.info("Image-Pair-to-Text:")
+        logger.info(
+            "\t>>>  V2T$R@1: {:.1f} - V2T$R@5: {:.1f} - V2T$R@10: {:.1f} - "
+            "V2T$Median R: {:.1f} - V2T$Mean R: {:.1f}".format(
+                vt_metrics["R1"],
+                vt_metrics["R5"],
+                vt_metrics["R10"],
+                vt_metrics["MR"],
+                vt_metrics["MeanR"],
+            ),
+        )
+
+        """for i, batch in enumerate(test_dataloader):
             if i != target_idx:
                 continue
             batch = tuple(t.to(device) for t in batch)
             _, _, _, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = batch
             image_pair_batch = (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
             find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5)
-            break
+            break"""
 
 
 
