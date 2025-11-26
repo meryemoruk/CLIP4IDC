@@ -532,10 +532,13 @@ def eval_epoch(args, model, test_dataloader, device):
         # 1. cache the features
         # ----------------------------
         write_debug("test dataloader", test_dataloader, False)
-        write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, True)
+        write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, False)
+        dontLoop = True
         for bid, batch in enumerate(test_dataloader):
+            write_debug("test dataloader", batch, dontLoop)
+            dontLoop = False
             batch = tuple(t.to(device) for t in batch)
-
+            
             (
                 input_ids,
                 input_mask,
