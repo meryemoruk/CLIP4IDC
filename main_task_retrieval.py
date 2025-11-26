@@ -448,6 +448,7 @@ def _run_on_single_gpu(
 ):
     sim_matrix = []
     write_debug("batch run on singledaki", batch_list_t)
+    write_debug("batch_sequence_output_list", batch_sequence_output_list)
     for idx1, b1 in enumerate(batch_list_t):
         input_mask, segment_ids, *_tmp = b1
         sequence_output = batch_sequence_output_list[idx1]
