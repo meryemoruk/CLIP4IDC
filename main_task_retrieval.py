@@ -447,8 +447,8 @@ def _run_on_single_gpu(
     batch_visual_output_list,
 ):
     sim_matrix = []
-    write_debug("batch run on singledaki", batch_list_t)
-    write_debug("batch_sequence_output_list", batch_sequence_output_list)
+    write_debug("batch run on singledaki", batch_list_t, False)
+    write_debug("batch_sequence_output_list", batch_sequence_output_list, False)
     for idx1, b1 in enumerate(batch_list_t):
         input_mask, segment_ids, *_tmp = b1
         sequence_output = batch_sequence_output_list[idx1]
@@ -530,7 +530,8 @@ def eval_epoch(args, model, test_dataloader, device):
         # ----------------------------
         # 1. cache the features
         # ----------------------------
-        write_debug("test dataloader", test_dataloader)
+        write_debug("test dataloader", test_dataloader, False)
+        write_debug("data set test dataloader'ın içindeki", test_dataloader['dataset'], True)
         for bid, batch in enumerate(test_dataloader):
             batch = tuple(t.to(device) for t in batch)
 
