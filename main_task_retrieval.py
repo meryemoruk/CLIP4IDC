@@ -472,27 +472,25 @@ def _run_on_single_gpu_retrieval(
     model,
     caption_vector,
     all_visual_vector,
-    batch_sequence_output_list,
+    sequence_output,
     batch_visual_output_list,
 ):
     sim_matrix = []
-    for idx1, b1 in enumerate(batch_list_t):
-        input_mask, segment_ids, *_tmp = b1
-        sequence_output = batch_sequence_output_list[idx1]
-        each_row = []
-        for idx2, b2 in enumerate(batch_list_v):
-            pair_mask, *_tmp = b2
-            visual_output = batch_visual_output_list[idx2]
-            b1b2_logits, *_tmp = model.get_similarity_logits(
-                sequence_output,
-                visual_output,
-                input_mask,
-                pair_mask,
-            )
-            b1b2_logits = b1b2_logits.cpu().detach().numpy()
-            each_row.append(b1b2_logits)
-        each_row = np.concatenate(tuple(each_row), axis=-1)
-        sim_matrix.append(each_row)
+    input_mask, segment_ids, *_tmp = caption_vector
+    each_row = []
+    for idx2, b2 in enumerate(all_visual_vector):
+        pair_mask, *_tmp = b2
+        visual_output = batch_visual_output_list[idx2]
+        b1b2_logits, *_tmp = model.get_similarity_logits(
+            sequence_output,
+            visual_output,
+            input_mask,
+            pair_mask,
+        )
+        b1b2_logits = b1b2_logits.cpu().detach().numpy()
+        each_row.append(b1b2_logits)
+    each_row = np.concatenate(tuple(each_row), axis=-1)
+    sim_matrix.append(each_row)
     return sim_matrix
 
 
@@ -532,6 +530,7 @@ def eval_epoch(args, model, test_dataloader, device):
         # ----------------------------
         # 1. cache the features
         # ----------------------------
+        write_debug("test dataloader", test_dataloader)
         for bid, batch in enumerate(test_dataloader):
             batch = tuple(t.to(device) for t in batch)
 
@@ -1134,7 +1133,12 @@ def main():
         eval_epoch(args, model, test_dataloader, device)
 
     elif args.do_retrieval:
-        target_idx = 10  # örnek: 10. batch'ı istiyorum
+        #target_idx = 10  # örnek: 10. batch'ı istiyorum
+        visual_output, _ = model.get_visual_output(
+                        image_pair,
+                        semantic_pair,
+                        pair_mask,
+                    )
         for i, batch in enumerate(test_dataloader):
             if i != target_idx:
                 continue
