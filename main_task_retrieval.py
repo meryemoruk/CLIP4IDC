@@ -769,9 +769,7 @@ def eval_epoch(args, model, test_dataloader, device):
         dontLoop = True
         for bid, batch in enumerate(test_dataloader):
             logger.warning("Flag!!!!")
-            write_debug("length of batch", len(batch[0]), False)
-            dontLoop = False
-            batch = tuple(t.to(device) for t in batch)
+            #batch = tuple(t.to(device) for t in batch)
             
             (
                 input_ids,
@@ -827,6 +825,34 @@ def eval_epoch(args, model, test_dataloader, device):
                     batch_visual_output_list.append(visual_output)
                     batch_list_v.append((pair_mask,))
                 total_pair_num += b
+
+            # 1. Önce listeleri tek bir büyük Tensör haline getirelim (Concatenation)
+            # Şu an GPU'da olabilirler, işlem yapmadan önce CPU'ya almakta fayda var (bellek şişmesin diye)
+            all_embeddings = torch.cat([t.cpu() for t in batch_sequence_output_list], dim=0)
+            # batch_list_t içinde (mask, segment_id) ikilisi vardı, sadece maskeleri alalım:
+            all_masks = torch.cat([t[0].cpu() for t in batch_list_t], dim=0)
+
+            all_embeddings_v = torch.cat([t.cpu() for t in batch_visual_output_list], dim=0)
+            all_masks_v = torch.cat([t[0].cpu() for t in batch_list_v], dim=0)
+
+            # Loading saved
+            #veri = torch.load('model_cikti_verileri.pt')
+            #embeddings = veri['embeddings']
+
+
+            # 2. Sözlük (Dictionary) yapısında paketleyelim
+            kaydedilecek_veri = {
+                'batch_sequence_output_list': all_embeddings, 
+                'batch_list_t': all_masks,
+                'batch_visual_output_list': all_embeddings_v, 
+                'batch_list_v': all_masks_v,            
+                'info': 'Bu veri test setinden üretildi' 
+            }
+
+            # 3. Diske kaydet
+            torch.save(kaydedilecek_veri, 'model_cikti_verileri.pt')
+
+            print("Veriler 'model_cikti_verileri.pt' olarak kaydedildi.")
 
             logger.info(f"{bid}/{len(test_dataloader)}\r")
             #print(f"{bid}/{len(test_dataloader)}\r", end="", flush=True)
