@@ -764,12 +764,16 @@ def eval_epoch(args, model, test_dataloader, device):
         # ----------------------------
         # 1. cache the features
         # ----------------------------
-        write_debug("test dataloader", test_dataloader, False)
-        write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, False)
-        dontLoop = True
+
+        # 1. Kayıtlar için temiz bir klasör açalım
+        output_folder = "batch_kayitlari"
+        os.makedirs(output_folder, exist_ok=True)
+
+        print("İşlem başlıyor, veriler parça parça diske yazılacak...")
+
         for bid, batch in enumerate(test_dataloader):
             logger.warning("Flag!!!!")
-            #batch = tuple(t.to(device) for t in batch)
+            batch = tuple(t.to(device) for t in batch)
             
             (
                 input_ids,
@@ -826,33 +830,28 @@ def eval_epoch(args, model, test_dataloader, device):
                     batch_list_v.append((pair_mask,))
                 total_pair_num += b
 
-            # 1. Önce listeleri tek bir büyük Tensör haline getirelim (Concatenation)
-            # Şu an GPU'da olabilirler, işlem yapmadan önce CPU'ya almakta fayda var (bellek şişmesin diye)
-            all_embeddings = torch.cat([t.cpu() for t in batch_sequence_output_list], dim=0)
-            # batch_list_t içinde (mask, segment_id) ikilisi vardı, sadece maskeleri alalım:
-            all_masks = torch.cat([t[0].cpu() for t in batch_list_t], dim=0)
+                batch_data = {
+                    'input_ids': input_ids.detach().cpu(),
+                    'input_mask': input_mask.detach().cpu(),
+                    'segment_ids': segment_ids.detach().cpu(),
+                    'bef_image': bef_image.detach().cpu(),
+                    'aft_image': aft_image.detach().cpu(),
+                    'bef_semantic': bef_semantic.detach().cpu(),
+                    'aft_semantic': aft_semantic.detach().cpu(),
+                    'image_mask': image_mask.detach().cpu()
+                }
+                
+                # Her batch için benzersiz bir isim: batch_0.pt, batch_1.pt...
+                file_name = os.path.join(output_folder, f"batch_{bid}.pt")
+                torch.save(batch_data, file_name)
 
-            all_embeddings_v = torch.cat([t.cpu() for t in batch_visual_output_list], dim=0)
-            all_masks_v = torch.cat([t[0].cpu() for t in batch_list_v], dim=0)
+                # İstersen takip için log bas
+                if bid % 10 == 0:
+                    print(f"Batch {bid} kaydedildi.")
 
             # Loading saved
             #veri = torch.load('model_cikti_verileri.pt')
             #embeddings = veri['embeddings']
-
-
-            # 2. Sözlük (Dictionary) yapısında paketleyelim
-            kaydedilecek_veri = {
-                'batch_sequence_output_list': all_embeddings, 
-                'batch_list_t': all_masks,
-                'batch_visual_output_list': all_embeddings_v, 
-                'batch_list_v': all_masks_v,            
-                'info': 'Bu veri test setinden üretildi' 
-            }
-
-            # 3. Diske kaydet
-            torch.save(kaydedilecek_veri, 'model_cikti_verileri.pt')
-
-            print("Veriler 'model_cikti_verileri.pt' olarak kaydedildi.")
 
             logger.info(f"{bid}/{len(test_dataloader)}\r")
             #print(f"{bid}/{len(test_dataloader)}\r", end="", flush=True)
@@ -934,7 +933,55 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
+def accumulate_vector():
+    import glob
 
+    # Kayıtlı tüm dosyaları bul (Sıralı olması için sort kullanıyoruz)
+    files = sorted(glob.glob(os.path.join("batch_kayitlari", "*.pt")))
+
+    all_input_ids = []
+    all_input_mask = []
+    all_segment_ids = []
+    all_bef_image = []
+    all_aft_image = []
+    all_bef_semantic = []
+    all_aft_semantic = []
+    all_image_mask = []
+
+    print("Dosyalar okunuyor ve birleştiriliyor...")
+
+    for file_path in files:
+        # 1. Dosyayı yükle
+        data = torch.load(file_path)
+        
+        # 2. Listelere ekle
+        all_input_ids.append(data['input_ids'])
+        all_input_mask.append(data['input_mask'])
+        all_segment_ids.append(data['segment_ids'])
+        all_bef_image.append(data['bef_image'])
+        all_aft_image.append(data['aft_image'])
+        all_bef_semantic.append(data['bef_semantic'])
+        all_aft_semantic.append(data['aft_semantic'])
+        all_image_mask.append(data['image_mask'])
+
+        # 3. Hepsini tek bir büyük Tensör yap (Concatenate)
+        final_embeddings = torch.cat(all_input_ids, dim=0)
+
+        print("BİRLEŞTİRME TAMAMLANDI!")
+        print(f"Final Embedding Boyutu: {final_embeddings.shape}")
+        # Örn Çıktı: (6121, 77, 512)
+
+        # İstersen bu BÜYÜK birleşmiş halini de tek dosya olarak saklayabilirsin
+        torch.save({
+            'input_ids': all_input_ids.detach().cpu(),
+            'input_mask': all_input_mask.detach().cpu(),
+            'segment_ids': all_segment_ids.detach().cpu(),
+            'bef_image': all_bef_image.detach().cpu(),
+            'aft_image': all_aft_image.detach().cpu(),
+            'bef_semantic': all_bef_semantic.detach().cpu(),
+            'aft_semantic': all_aft_semantic.detach().cpu(),
+            'image_mask': all_image_mask.detach().cpu()
+        }, "tum_veri_seti_birlestirilmis.pt")
 
 def print_topk_texts(topk_indices, test_dataloader):
     if hasattr(test_dataloader.dataset, "texts"):
@@ -1341,6 +1388,7 @@ def main():
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
+        accumulate_vector()
 
     elif args.do_retrieval:
         #target_idx = 10  # örnek: 10. batch'ı istiyorum
