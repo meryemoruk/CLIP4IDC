@@ -535,7 +535,7 @@ def eval_epoch(args, model, test_dataloader, device):
         write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, False)
         dontLoop = True
         for bid, batch in enumerate(test_dataloader):
-            write_debug("test dataloader", batch[0], dontLoop)
+            write_debug("length of batch", len(batch[0]), dontLoop)
             dontLoop = False
             batch = tuple(t.to(device) for t in batch)
             
