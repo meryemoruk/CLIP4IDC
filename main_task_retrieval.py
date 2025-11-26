@@ -15,6 +15,8 @@ from modules.modeling import CLIP4IDC
 from modules.optimization import BertAdam
 from modules.tokenization_clip import SimpleTokenizer as ClipTokenizer
 
+from exploringDebugging import write_debug
+
 from util import parallel_apply, get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
 
@@ -30,7 +32,7 @@ os.environ["MPLBACKEND"] = "agg"
 import matplotlib
 
 # 3. (Optional but recommended) Explicitly tell matplotlib to use 'agg'
-#    This ensures it's set, even if another library tried to import it first.
+#    This ensures ist's set, even if another library tried to import it first.
 try:
     matplotlib.use("agg")
 except Exception:
@@ -445,6 +447,34 @@ def _run_on_single_gpu(
     batch_visual_output_list,
 ):
     sim_matrix = []
+    write_debug("batch run on singledaki", batch_list_t)
+    for idx1, b1 in enumerate(batch_list_t):
+        input_mask, segment_ids, *_tmp = b1
+        sequence_output = batch_sequence_output_list[idx1]
+        each_row = []
+        for idx2, b2 in enumerate(batch_list_v):
+            pair_mask, *_tmp = b2
+            visual_output = batch_visual_output_list[idx2]
+            b1b2_logits, *_tmp = model.get_similarity_logits(
+                sequence_output,
+                visual_output,
+                input_mask,
+                pair_mask,
+            )
+            b1b2_logits = b1b2_logits.cpu().detach().numpy()
+            each_row.append(b1b2_logits)
+        each_row = np.concatenate(tuple(each_row), axis=-1)
+        sim_matrix.append(each_row)
+    return sim_matrix
+
+def _run_on_single_gpu_retrieval(
+    model,
+    caption_vector,
+    all_visual_vector,
+    batch_sequence_output_list,
+    batch_visual_output_list,
+):
+    sim_matrix = []
     for idx1, b1 in enumerate(batch_list_t):
         input_mask, segment_ids, *_tmp = b1
         sequence_output = batch_sequence_output_list[idx1]
@@ -776,66 +806,6 @@ def _apply_projection(vec: torch.Tensor, proj):
         return proj(vec)
     else:
         return vec
-
-"""
-old save 
-def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
-    """
-    #Text gömmelerini saklar. Mümkünse CLIP ortak embedding boyutuna projekte eder.
-    #Kaydedilen shape: (N_texts, D_embed)  (numpy float32)
-"""
-    if hasattr(model, "module"):
-        model = model.module
-
-    model.eval()
-    all_text_embeddings = []
-    has_text_proj, text_proj, _, _ = _get_clip_projection_dims(model)
-
-    with torch.no_grad():
-        for batch in test_dataloader:
-            batch = tuple(t.to(device) for t in batch)
-            input_ids, input_mask, segment_ids, *_ = batch
-
-            # sequence_output: (B, L, D_text)
-            sequence_output, _ = model.get_sequence_output(
-                input_ids,
-                segment_ids,
-                input_mask,
-            )
-
-            # Pool: öncelikle CLIP standardına göre [CLS] tokeni varsa onu dene, yoksa mask-aware mean pooling
-            # Eğer sequence_output shape (B, L, D), CLS token genelde index 0 olur.
-            pooled = None
-            try:
-                pooled = sequence_output[:, 0, :]  # (B, D_text)
-            except Exception:
-                pooled = None
-
-            if pooled is None or pooled.shape[-1] == 0:
-                # fallback mask-aware mean pooling
-                mask = input_mask.unsqueeze(-1).float()  # (B, L, 1)
-                sequence_output_masked = sequence_output * mask
-                pooled = sequence_output_masked.sum(dim=1) / (mask.sum(dim=1).clamp(min=1e-9))
-
-            # text proj var ise onu uygula (öteleme/lineer)
-            if has_text_proj:
-                try:
-                    pooled = _apply_projection(pooled, text_proj)
-                except Exception as e:
-                    # projection uygulanamazsa uyarı ver, pooled kullan
-                    print(f"[Warning] text projection uygulanamadı: {str(e)}. Projeksiyon atlandı.")
-            # pooled şimdi (B, D_embed) veya (B, D_text) (en azından sabit width per batch)
-
-            all_text_embeddings.append(pooled.cpu().numpy().astype(np.float32))
-
-    # Kontrol: tüm batchlerin column sayısı aynı mı?
-    shapes = [arr.shape[1] for arr in all_text_embeddings]
-    if len(set(shapes)) != 1:
-        raise RuntimeError(f"Text embedding batch-width mismatch: found widths {set(shapes)}. "
-                           "Projeksiyon uygulanmalı veya model farklı batchlerde farklı dim döndürüyor.")
-    all_text_embeddings = np.vstack(all_text_embeddings)   # (N, D)
-    np.save(save_path, all_text_embeddings)
-    print(f"✅ Text embeddings saved to {save_path} (shape: {all_text_embeddings.shape})")"""
 
 def save_text_embeddings(model, test_dataloader, device, save_path="text_embeddings.npy"):
     import numpy as np
