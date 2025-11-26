@@ -728,6 +728,185 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
+def eval_epoch(args, model, test_dataloader, device):
+    if hasattr(model, "module"):
+        model = model.module.to(device)
+    else:
+        model = model.to(device)
+
+    # #################################################################
+    # below variables are used to multi-sentences retrieval
+    # multi_sentence_: important tag for eval
+    # cut_off_points: used to tag the label when calculate the metric
+    # sentence_num: used to cut the sentence representation
+    # video_num: used to cut the video representation
+    # #################################################################
+    multi_sentence_ = False
+    cut_off_points_, sentence_num_, pair_num_ = [], -1, -1
+    if hasattr(test_dataloader.dataset, "multi_sentence_per_pair") and test_dataloader.dataset.multi_sentence_per_pair:
+        multi_sentence_ = True
+        cut_off_points_ = test_dataloader.dataset.cut_off_points
+        sentence_num_ = test_dataloader.dataset.sentence_num
+        pair_num_ = test_dataloader.dataset.image_num
+        cut_off_points_ = [itm - 1 for itm in cut_off_points_]
+
+    if multi_sentence_:
+        logger.warning("Eval under the multi-sentence per pair setting.")
+        logger.warning(f"sentence num: {sentence_num_}, pair num: {pair_num_}")
+
+    model.eval()
+    with torch.no_grad():
+        batch_list_t = []
+        batch_list_v = []
+        batch_sequence_output_list, batch_visual_output_list = [], []
+        total_pair_num = 0
+
+        # ----------------------------
+        # 1. cache the features
+        # ----------------------------
+        write_debug("test dataloader", test_dataloader, False)
+        write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, False)
+        dontLoop = True
+        for bid, batch in enumerate(test_dataloader):
+            print("Flag!!!!")
+            write_debug("length of batch", len(batch[0]), dontLoop, False)
+            dontLoop = False
+            batch = tuple(t.to(device) for t in batch)
+            
+            (
+                input_ids,
+                input_mask,
+                segment_ids,
+                bef_image,
+                aft_image,
+                bef_semantic,
+                aft_semantic,
+                image_mask,
+            ) = batch
+
+            image_pair = torch.cat([bef_image, aft_image], 1)
+            semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
+
+            if multi_sentence_:
+                # multi-sentences retrieval means: one pair has two or more
+                # descriptions.
+                b, *_t = image_pair.shape
+                sequence_output, _ = model.get_sequence_output(
+                    input_ids,
+                    segment_ids,
+                    input_mask,
+                )
+
+                batch_sequence_output_list.append(sequence_output)
+                batch_list_t.append(
+                    (
+                        input_mask,
+                        segment_ids,
+                    ),
+                )
+
+                s_, e_ = total_pair_num, total_pair_num + b
+                filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
+
+                if len(filter_inds) > 0:
+                    image_pair, pair_mask = (
+                        image_pair[filter_inds, ...],
+                        image_mask[filter_inds, ...],
+                    )
+
+                    semantic_pair, pair_mask = (
+                        semantic_pair[filter_inds, ...],
+                        image_mask[filter_inds, ...],
+                    )
+                    visual_output, _ = model.get_visual_output(
+                        image_pair,
+                        semantic_pair,
+                        pair_mask,
+                    )
+
+                    batch_visual_output_list.append(visual_output)
+                    batch_list_v.append((pair_mask,))
+                total_pair_num += b
+
+            logger.info(f"{bid}/{len(test_dataloader)}\r")
+            #print(f"{bid}/{len(test_dataloader)}\r", end="", flush=True)
+
+
+        # ----------------------------------
+        # 2. calculate the similarity
+        # ----------------------------------
+
+        sim_matrix = _run_on_single_gpu(
+            model,
+            batch_list_t,
+            batch_list_v,
+            batch_sequence_output_list,
+            batch_visual_output_list,
+        )
+        sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
+
+    if multi_sentence_:
+        cut_off_points2len_ = [itm + 1 for itm in cut_off_points_]
+        max_length = max(
+            [
+                e_ - s_
+                for s_, e_ in zip(
+                    [0] + cut_off_points2len_[:-1],
+                    cut_off_points2len_,
+                )
+            ],
+        )
+        sim_matrix_new = []
+        for s_, e_ in zip([0] + cut_off_points2len_[:-1], cut_off_points2len_):
+            sim_matrix_new.append(
+                np.concatenate(
+                    (
+                        sim_matrix[s_:e_],
+                        np.full(
+                            (max_length - e_ + s_, sim_matrix.shape[1]),
+                            -np.inf,
+                        ),
+                    ),
+                    axis=0,
+                ),
+            )
+        sim_matrix = np.stack(tuple(sim_matrix_new), axis=0)
+        logger.info(
+            "after reshape, sim matrix size: {} x {} x {}".format(
+                sim_matrix.shape[0],
+                sim_matrix.shape[1],
+                sim_matrix.shape[2],
+            ),
+        )
+
+        tv_metrics = tensor_text_to_video_metrics(sim_matrix)
+        vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
+
+    logger.info("Text-to-Image-Pair:")
+    logger.info(
+        "\t>>>  R@1: {:.1f} - R@5: {:.1f} - R@10: {:.1f} - Median R: {:.1f} - "
+        "Mean R: {:.1f}".format(
+            tv_metrics["R1"],
+            tv_metrics["R5"],
+            tv_metrics["R10"],
+            tv_metrics["MR"],
+            tv_metrics["MeanR"],
+        ),
+    )
+    logger.info("Image-Pair-to-Text:")
+    logger.info(
+        "\t>>>  V2T$R@1: {:.1f} - V2T$R@5: {:.1f} - V2T$R@10: {:.1f} - "
+        "V2T$Median R: {:.1f} - V2T$Mean R: {:.1f}".format(
+            vt_metrics["R1"],
+            vt_metrics["R5"],
+            vt_metrics["R10"],
+            vt_metrics["MR"],
+            vt_metrics["MeanR"],
+        ),
+    )
+
+    R1 = tv_metrics["R1"]
+    return R1
 
 
 
@@ -1140,6 +1319,7 @@ def main():
     elif args.do_retrieval:
         #target_idx = 10  # örnek: 10. batch'ı istiyorum
         cut_off_points_ = test_dataloader.dataset.cut_off_points
+        batch = test_dataloader.__getitem__()
         batch = tuple(t.to(device) for t in batch)
 
         (
