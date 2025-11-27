@@ -1027,17 +1027,6 @@ class VeriSetiOkuyucu:
         """İstenilen sıradaki verinin hem metnini hem tensörünü getirir."""
         if index >= len(self.metadata_list):
             return "Hata: Geçersiz indeks!"
-        
-        """
-        input_ids,
-        input_mask,
-        segment_ids,
-        bef_image,
-        aft_image,
-        bef_semantic,
-        aft_semantic,
-        image_mask,
-        """
             
         meta = self.metadata_list[index]
 
@@ -1512,7 +1501,7 @@ def main():
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
-        accumulate_vector()
+        #accumulate_vector()
 
     elif args.do_retrieval:
         # --- KULLANIM ---
@@ -1528,7 +1517,7 @@ def main():
         print("\n--- 50. Kayıt Bilgisi ---")
         print(f"Resim Adı: {veri_50['image_file']}")
         print(f"Cümle:     {veri_50['text']}")
-        print(f"input_ids: {veri_50['input_ids'].shape}")
+        print(f"sequence_output: {veri_50['sequence_output'].shape}")
 
 
 
