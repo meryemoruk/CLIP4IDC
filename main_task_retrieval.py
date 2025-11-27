@@ -470,76 +470,34 @@ def _run_on_single_gpu(
 
 def _run_on_single_gpu_retrieval(
     model,
-    data
+    index
 ):
-    sim_matrix = []
+    # Dosya yollarını kendine göre düzenle
+    okuyucu = VeriSetiOkuyucu(
+        tensor_path='tum_veri_seti_birlestirilmis.pt', 
+        json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json'
+    )
+
+    data = okuyucu.get_item(index)
+
     input_mask = data["input_mask"]
     segment_ids = data["segment_ids"]
+    sequence_output = data["sequence_output"]
 
-    bef_image = data["bef_image"]
-    aft_image = data["aft_image"]
-    bef_semantic = data["bef_semantic"]
-    aft_semantic = data["aft_semantic"]
-    input_ids = data["input_ids"]
+    result = []
 
-    image_mask = data["image_mask"]
-
-    #------------------------------------🤩
-    image_pair = torch.cat([bef_image, aft_image], 1)
-    semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
-
-    if True: #Fix me
-        # multi-sentences retrieval means: one pair has two or more
-        # descriptions.
-        b, *_t = image_pair.shape
-        sequence_output, _ = model.get_sequence_output(
-            input_ids,
-            segment_ids,
-            input_mask,
-        )
-
-        s_, e_ = total_pair_num, total_pair_num + b
-        filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
-
-        if len(filter_inds) > 0:
-            image_pair, pair_mask = (
-                image_pair[filter_inds, ...],
-                image_mask[filter_inds, ...],
-            )
-
-            semantic_pair, pair_mask = (
-                semantic_pair[filter_inds, ...],
-                image_mask[filter_inds, ...],
-            )
-            visual_output, _ = model.get_visual_output(
-                image_pair,
-                semantic_pair,
-                pair_mask,
-            )
-
-            batch_visual_output_list.append(visual_output)
-            batch_list_v.append((pair_mask,))
-    #------------------------------------🤩
-    sim_matrix = []
-
-    sequence_output = model.get_sequence_output(input_ids,segment_ids,input_mask)
-    each_row = []
-    for idx2, b2 in enumerate(batch_list_v):
-        pair_mask, *_tmp = b2
-        visual_output = batch_visual_output_list[idx2]
+    for i, c_visual_output in enumerate(okuyucu.visual_output):
+        pair_mask = okuyucu.get_item(i)["pair_mask"]
         b1b2_logits, *_tmp = model.get_similarity_logits(
             sequence_output,
-            visual_output,
+            c_visual_output,
             input_mask,
             pair_mask,
         )
         b1b2_logits = b1b2_logits.cpu().detach().numpy()
-        each_row.append(b1b2_logits)
-    each_row = np.concatenate(tuple(each_row), axis=-1)
-    sim_matrix.append(each_row)
+        result.append(b1b2_logits)
 
-
-    return sim_matrix
+    return result
 
 
 def eval_epoch(args, model, test_dataloader, device):
@@ -1511,13 +1469,14 @@ def main():
             tensor_path='tum_veri_seti_birlestirilmis.pt', 
             json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json'
         )
-
         # ÖRNEK 1: 50. sıradaki veriyi çekelim
         veri_50 = okuyucu.get_item(50)
         print("\n--- 50. Kayıt Bilgisi ---")
         print(f"Resim Adı: {veri_50['image_file']}")
         print(f"Cümle:     {veri_50['text']}")
         print(f"sequence_output: {veri_50['sequence_output'].shape}")
+
+        print(_run_on_single_gpu_retrieval(model, 50))
 
 
 
