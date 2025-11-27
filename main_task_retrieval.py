@@ -470,18 +470,63 @@ def _run_on_single_gpu(
 
 def _run_on_single_gpu_retrieval(
     model,
-    list_t,
-    list_v,
-    sequence_output_list,
-    visual_output_list,
+    data
 ):
     sim_matrix = []
-    input_mask, segment_ids, *_tmp = list_t
+    input_mask = data["input_mask"]
+    segment_ids = data["segment_ids"]
+
+    bef_image = data["bef_image"]
+    aft_image = data["aft_image"]
+    bef_semantic = data["bef_semantic"]
+    aft_semantic = data["aft_semantic"]
+    input_ids = data["input_ids"]
+
+    image_mask = data["image_mask"]
+
+    #------------------------------------🤩
+    image_pair = torch.cat([bef_image, aft_image], 1)
+    semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
+
+    if True: #Fix me
+        # multi-sentences retrieval means: one pair has two or more
+        # descriptions.
+        b, *_t = image_pair.shape
+        sequence_output, _ = model.get_sequence_output(
+            input_ids,
+            segment_ids,
+            input_mask,
+        )
+
+        s_, e_ = total_pair_num, total_pair_num + b
+        filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
+
+        if len(filter_inds) > 0:
+            image_pair, pair_mask = (
+                image_pair[filter_inds, ...],
+                image_mask[filter_inds, ...],
+            )
+
+            semantic_pair, pair_mask = (
+                semantic_pair[filter_inds, ...],
+                image_mask[filter_inds, ...],
+            )
+            visual_output, _ = model.get_visual_output(
+                image_pair,
+                semantic_pair,
+                pair_mask,
+            )
+
+            batch_visual_output_list.append(visual_output)
+            batch_list_v.append((pair_mask,))
+    #------------------------------------🤩
+    sim_matrix = []
+
+    sequence_output = model.get_sequence_output(input_ids,segment_ids,input_mask)
     each_row = []
-    sequence_output = sequence_output_list
-    for idx2, b2 in enumerate(list_v):
+    for idx2, b2 in enumerate(batch_list_v):
         pair_mask, *_tmp = b2
-        visual_output = visual_output_list[idx2]
+        visual_output = batch_visual_output_list[idx2]
         b1b2_logits, *_tmp = model.get_similarity_logits(
             sequence_output,
             visual_output,
@@ -492,6 +537,8 @@ def _run_on_single_gpu_retrieval(
         each_row.append(b1b2_logits)
     each_row = np.concatenate(tuple(each_row), axis=-1)
     sim_matrix.append(each_row)
+
+
     return sim_matrix
 
 
@@ -831,7 +878,7 @@ def eval_epoch(args, model, test_dataloader, device):
                 total_pair_num += b
 
                 batch_data = {
-                    'input_ids': input_ids.detach().cpu(),
+                    'input_ids': visual_output.detach().cpu(),
                     'input_mask': input_mask.detach().cpu(),
                     'segment_ids': segment_ids.detach().cpu(),
                     'bef_image': bef_image.detach().cpu(),
@@ -1079,6 +1126,8 @@ def accumulate_vector():
         'aft_semantic': final_aft_semantic.detach().cpu(),
         'image_mask': final_image_mask.detach().cpu()
     }, "tum_veri_seti_birlestirilmis.pt")
+
+
 
 def print_topk_texts(topk_indices, test_dataloader):
     if hasattr(test_dataloader.dataset, "texts"):
@@ -1499,19 +1548,6 @@ def main():
         # ÖRNEK 1: 50. sıradaki veriyi çekelim
         veri_50 = okuyucu.get_item(50)
         print("\n--- 50. Kayıt Bilgisi ---")
-        print(f"Resim Adı: {veri_50['image_file']}")
-        print(f"Cümle:     {veri_50['text']}")
-        print(f"input_ids: {veri_50['input_ids'].shape}")
-
-
-        veri_50 = okuyucu.get_item(49)
-        print("\n--- 49. Kayıt Bilgisi ---")
-        print(f"Resim Adı: {veri_50['image_file']}")
-        print(f"Cümle:     {veri_50['text']}")
-        print(f"input_ids: {veri_50['input_ids'].shape}")
-        
-        veri_50 = okuyucu.get_item(51)
-        print("\n--- 51. Kayıt Bilgisi ---")
         print(f"Resim Adı: {veri_50['image_file']}")
         print(f"Cümle:     {veri_50['text']}")
         print(f"input_ids: {veri_50['input_ids'].shape}")
