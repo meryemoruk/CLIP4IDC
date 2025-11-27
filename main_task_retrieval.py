@@ -1017,10 +1017,10 @@ class VeriSetiOkuyucu:
                     })
         
         # Güvenlik Kontrolü
-        print(f"Tensor Satır Sayısı: {len(self.visual_output)}")
+        print(f"Tensor Satır Sayısı: {len(self.sequence_output)}")
         print(f"Metin Satır Sayısı:  {len(self.metadata_list)}")
         
-        if len(self.visual_output) != len(self.metadata_list):
+        if len(self.sequence_output) != len(self.metadata_list):
             print("UYARI: Tensor ve Metin sayıları uyuşmuyor! Veri setinde eksik cümleler olabilir.")
 
     def get_item(self, index):
