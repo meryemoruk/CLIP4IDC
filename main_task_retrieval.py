@@ -942,7 +942,7 @@ class VeriSetiOkuyucu:
         # 1. Matematiksel Veriyi (Tensors) Yükle
         # (CPU'ya map ederek yüklüyoruz ki GPU dolmasın)
 
-        self.tensors_data = torch.load(tensor_path, map_location=torch.device('cpu'))
+        self.tensors_data = torch.load(tensor_path, map_location=torch.device('cpu'), mmap=True)
 
         self.input_ids = self.tensors_data['input_ids']
         self.input_mask = self.tensors_data['input_mask']
