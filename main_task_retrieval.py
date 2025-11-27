@@ -933,6 +933,95 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
+import json
+
+class VeriSetiOkuyucu:
+    def __init__(self, tensor_path, json_path, split='test'):
+        print("Veriler yükleniyor, lütfen bekleyin...")
+        
+        # 1. Matematiksel Veriyi (Tensors) Yükle
+        # (CPU'ya map ederek yüklüyoruz ki GPU dolmasın)
+
+        self.tensors_data = torch.load(tensor_path, map_location=torch.device('cpu'))
+
+        self.input_ids = self.tensors_data['input_ids']
+        self.input_mask = self.tensors_data['input_mask']
+        self.segment_ids = self.tensors_data['segment_ids']
+        self.bef_image = self.tensors_data['bef_image']
+        self.aft_image = self.tensors_data['aft_image']
+        self.bef_semantic = self.tensors_data['bef_semantic']
+        self.aft_semantic = self.tensors_data['aft_semantic']
+        self.image_mask = self.tensors_data['image_mask']
+        
+        # 2. Ham Metin Verisini (JSON) Yükle
+        with open(json_path, 'r') as f:
+            full_json = json.load(f)
+            
+        # 3. Sadece 'test' kısmını filtrele ve Düzleştir (Flatten)
+        # Modelin 6121 satırlık çıktı verdiği için JSON'u da ona benzetmeliyiz.
+        self.metadata_list = []
+        
+        for img_item in full_json['images']:
+            if img_item['split'] == split:
+                img_filename = img_item['filename']
+                img_id = img_item['imgid']
+                
+                # Her resmin içindeki cümleleri tek tek listeye ekle
+                for sent in img_item['sentences']:
+                    self.metadata_list.append({
+                        'image_filename': img_filename,
+                        'image_id': img_id,
+                        'raw_text': sent['raw'],
+                        'tokens': sent['tokens']
+                    })
+        
+        # Güvenlik Kontrolü
+        print(f"Tensor Satır Sayısı: {len(self.input_ids)}")
+        print(f"Metin Satır Sayısı:  {len(self.metadata_list)}")
+        
+        if len(self.input_ids) != len(self.metadata_list):
+            print("UYARI: Tensor ve Metin sayıları uyuşmuyor! Veri setinde eksik cümleler olabilir.")
+
+    def get_item(self, index):
+        """İstenilen sıradaki verinin hem metnini hem tensörünü getirir."""
+        if index >= len(self.metadata_list):
+            return "Hata: Geçersiz indeks!"
+        
+        """
+        input_ids,
+        input_mask,
+        segment_ids,
+        bef_image,
+        aft_image,
+        bef_semantic,
+        aft_semantic,
+        image_mask,
+        """
+            
+        meta = self.metadata_list[index]
+
+        input_ids = self.input_ids[index]
+        segment_ids = self.segment_ids[index]
+        bef_image = self.bef_image[index]
+        aft_image = self.aft_image[index]
+        bef_semantic = self.bef_semantic[index]
+        aft_semantic = self.aft_semantic[index]
+        image_mask = self.image_mask[index]
+
+        
+        return {
+            'text': meta['raw_text'],
+            'image_file': meta['image_filename'],
+
+            'input_ids': input_ids,  
+            'image_mask': image_mask,
+            'segment_ids': segment_ids,
+            'bef_image': bef_image,
+            'aft_image': aft_image,
+            'bef_semantic': bef_semantic,
+            'aft_semantic': aft_semantic
+        }
+
 def accumulate_vector():
     import glob
 
@@ -1396,146 +1485,27 @@ def main():
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
-        accumulate_vector()
+        #accumulate_vector()
 
     elif args.do_retrieval:
-        #target_idx = 10  # örnek: 10. batch'ı istiyorum
-        cut_off_points_ = test_dataloader.dataset.cut_off_points
-        batch = test_dataloader.__getitem__()
-        batch = tuple(t.to(device) for t in batch)
+        # --- KULLANIM ---
 
-        (
-            input_ids,
-            input_mask,
-            segment_ids,
-            bef_image,
-            aft_image,
-            bef_semantic,
-            aft_semantic,
-            image_mask,
-        ) = batch
-
-        list_t = []
-        list_v = []
-
-        image_pair = torch.cat([bef_image, aft_image], 1)
-        semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
-        multi_sentence_ = True
-        if multi_sentence_:
-            # multi-sentences retrieval means: one pair has two or more
-            # descriptions.
-            b, *_t = image_pair.shape
-            sequence_output, _ = model.get_sequence_output(
-                input_ids,
-                segment_ids,
-                input_mask,
-            )
-
-            list_t.append(
-                (
-                    input_mask,
-                    segment_ids,
-                ),
-            )
-
-            s_, e_ = total_pair_num, total_pair_num + b
-            filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
-
-            if len(filter_inds) > 0:
-                image_pair, pair_mask = (
-                    image_pair[filter_inds, ...],
-                    image_mask[filter_inds, ...],
-                )
-
-                semantic_pair, pair_mask = (
-                    semantic_pair[filter_inds, ...],
-                    image_mask[filter_inds, ...],
-                )
-                visual_output, _ = model.get_visual_output(
-                    image_pair,
-                    semantic_pair,
-                    pair_mask,
-                )
-
-                list_v.append((pair_mask,))
-            total_pair_num += b
-        
-        sim_matrix = _run_on_single_gpu_retrieval(
-            model,
-            list_t,
-            list_v,
-            sequence_output,
-            visual_output)
-        sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
-
-        if multi_sentence_:
-            cut_off_points2len_ = [itm + 1 for itm in cut_off_points_]
-            max_length = max(
-                [
-                    e_ - s_
-                    for s_, e_ in zip(
-                        [0] + cut_off_points2len_[:-1],
-                        cut_off_points2len_,
-                    )
-                ],
-            )
-            sim_matrix_new = []
-            for s_, e_ in zip([0] + cut_off_points2len_[:-1], cut_off_points2len_):
-                sim_matrix_new.append(
-                    np.concatenate(
-                        (
-                            sim_matrix[s_:e_],
-                            np.full(
-                                (max_length - e_ + s_, sim_matrix.shape[1]),
-                                -np.inf,
-                            ),
-                        ),
-                        axis=0,
-                    ),
-                )
-            sim_matrix = np.stack(tuple(sim_matrix_new), axis=0)
-            logger.info(
-                "after reshape, sim matrix size: {} x {} x {}".format(
-                    sim_matrix.shape[0],
-                    sim_matrix.shape[1],
-                    sim_matrix.shape[2],
-                ),
-            )
-
-            tv_metrics = tensor_text_to_video_metrics(sim_matrix)
-            vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
-
-        logger.info("Text-to-Image-Pair:")
-        logger.info(
-            "\t>>>  R@1: {:.1f} - R@5: {:.1f} - R@10: {:.1f} - Median R: {:.1f} - "
-            "Mean R: {:.1f}".format(
-                tv_metrics["R1"],
-                tv_metrics["R5"],
-                tv_metrics["R10"],
-                tv_metrics["MR"],
-                tv_metrics["MeanR"],
-            ),
-        )
-        logger.info("Image-Pair-to-Text:")
-        logger.info(
-            "\t>>>  V2T$R@1: {:.1f} - V2T$R@5: {:.1f} - V2T$R@10: {:.1f} - "
-            "V2T$Median R: {:.1f} - V2T$Mean R: {:.1f}".format(
-                vt_metrics["R1"],
-                vt_metrics["R5"],
-                vt_metrics["R10"],
-                vt_metrics["MR"],
-                vt_metrics["MeanR"],
-            ),
+        # Dosya yollarını kendine göre düzenle
+        okuyucu = VeriSetiOkuyucu(
+            tensor_path='tum_veri_seti_birlestirilmis.pt', 
+            json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json'
         )
 
-        """for i, batch in enumerate(test_dataloader):
-            if i != target_idx:
-                continue
-            batch = tuple(t.to(device) for t in batch)
-            _, _, _, bef_image, aft_image, bef_semantic, aft_semantic, image_mask = batch
-            image_pair_batch = (bef_image, aft_image, bef_semantic, aft_semantic, image_mask)
-            find_topk_from_saved_text(model, image_pair_batch, device, test_dataloader, embeddings_path="text_embeddings.npy", topk=5)
-            break"""
+        # ÖRNEK 1: 50. sıradaki veriyi çekelim
+        veri_50 = okuyucu.get_item(50)
+        print("\n--- 50. Kayıt Bilgisi ---")
+        print(f"Resim Adı: {veri_50['image_file']}")
+        print(f"Cümle:     {veri_50['text']}")
+        print(f"input_ids: {veri_50['input_ids'].shape}")
+
+        # ÖRNEK 2: Vektörü kullanarak işlem yapabilirsin
+        vektor = veri_50['embedding']
+        # torch.cosine_similarity(vektor, baska_vektor) ...
 
 
 
