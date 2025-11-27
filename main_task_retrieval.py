@@ -1503,10 +1503,18 @@ def main():
         print(f"Cümle:     {veri_50['text']}")
         print(f"input_ids: {veri_50['input_ids'].shape}")
 
-        # ÖRNEK 2: Vektörü kullanarak işlem yapabilirsin
-        vektor = veri_50['embedding']
-        # torch.cosine_similarity(vektor, baska_vektor) ...
 
+        veri_50 = okuyucu.get_item(49)
+        print("\n--- 49. Kayıt Bilgisi ---")
+        print(f"Resim Adı: {veri_50['image_file']}")
+        print(f"Cümle:     {veri_50['text']}")
+        print(f"input_ids: {veri_50['input_ids'].shape}")
+        
+        veri_50 = okuyucu.get_item(51)
+        print("\n--- 51. Kayıt Bilgisi ---")
+        print(f"Resim Adı: {veri_50['image_file']}")
+        print(f"Cümle:     {veri_50['text']}")
+        print(f"input_ids: {veri_50['input_ids'].shape}")
 
 
 
