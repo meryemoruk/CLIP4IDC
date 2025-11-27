@@ -878,14 +878,11 @@ def eval_epoch(args, model, test_dataloader, device):
                 total_pair_num += b
 
                 batch_data = {
-                    'input_ids': visual_output.detach().cpu(),
+                    'visual_output': visual_output.detach().cpu(),
+                    'sequence_output': sequence_output.detach().cpu(),
                     'input_mask': input_mask.detach().cpu(),
                     'segment_ids': segment_ids.detach().cpu(),
-                    'bef_image': bef_image.detach().cpu(),
-                    'aft_image': aft_image.detach().cpu(),
-                    'bef_semantic': bef_semantic.detach().cpu(),
-                    'aft_semantic': aft_semantic.detach().cpu(),
-                    'image_mask': image_mask.detach().cpu()
+                    'pair_mask': pair_mask.detach().cpu(),
                 }
                 
                 # Her batch için benzersiz bir isim: batch_0.pt, batch_1.pt...
@@ -991,14 +988,11 @@ class VeriSetiOkuyucu:
 
         self.tensors_data = torch.load(tensor_path, map_location=torch.device('cpu'), mmap=True)
 
-        self.input_ids = self.tensors_data['input_ids']
+        self.visual_output = self.tensors_data['visual_output']
         self.input_mask = self.tensors_data['input_mask']
+        self.sequence_output = self.tensors_data['sequence_output']
         self.segment_ids = self.tensors_data['segment_ids']
-        self.bef_image = self.tensors_data['bef_image']
-        self.aft_image = self.tensors_data['aft_image']
-        self.bef_semantic = self.tensors_data['bef_semantic']
-        self.aft_semantic = self.tensors_data['aft_semantic']
-        self.image_mask = self.tensors_data['image_mask']
+        self.pair_mask = self.tensors_data['pair_mask']
         
         # 2. Ham Metin Verisini (JSON) Yükle
         with open(json_path, 'r') as f:
@@ -1023,10 +1017,10 @@ class VeriSetiOkuyucu:
                     })
         
         # Güvenlik Kontrolü
-        print(f"Tensor Satır Sayısı: {len(self.input_ids)}")
+        print(f"Tensor Satır Sayısı: {len(self.visual_output)}")
         print(f"Metin Satır Sayısı:  {len(self.metadata_list)}")
         
-        if len(self.input_ids) != len(self.metadata_list):
+        if len(self.visual_output) != len(self.metadata_list):
             print("UYARI: Tensor ve Metin sayıları uyuşmuyor! Veri setinde eksik cümleler olabilir.")
 
     def get_item(self, index):
@@ -1047,26 +1041,22 @@ class VeriSetiOkuyucu:
             
         meta = self.metadata_list[index]
 
-        input_ids = self.input_ids[index]
+        visual_output = self.visual_output[index]
         segment_ids = self.segment_ids[index]
-        bef_image = self.bef_image[index]
-        aft_image = self.aft_image[index]
-        bef_semantic = self.bef_semantic[index]
-        aft_semantic = self.aft_semantic[index]
-        image_mask = self.image_mask[index]
+        input_mask = self.input_mask[index]
+        sequence_output = self.sequence_output[index]
+        pair_mask = self.pair_mask[index]
 
         
         return {
             'text': meta['raw_text'],
             'image_file': meta['image_filename'],
 
-            'input_ids': input_ids,  
-            'image_mask': image_mask,
+            'visual_output': visual_output,  
+            'input_mask': input_mask,
             'segment_ids': segment_ids,
-            'bef_image': bef_image,
-            'aft_image': aft_image,
-            'bef_semantic': bef_semantic,
-            'aft_semantic': aft_semantic
+            'sequence_output': sequence_output,
+            'pair_mask': pair_mask
         }
 
 def accumulate_vector():
@@ -1075,14 +1065,11 @@ def accumulate_vector():
     # Kayıtlı tüm dosyaları bul (Sıralı olması için sort kullanıyoruz)
     files = sorted(glob.glob(os.path.join("batch_kayitlari", "*.pt")))
 
-    all_input_ids = []
+    all_visual_output = []
     all_input_mask = []
     all_segment_ids = []
-    all_bef_image = []
-    all_aft_image = []
-    all_bef_semantic = []
-    all_aft_semantic = []
-    all_image_mask = []
+    all_sequence_output= []
+    all_pair_mask = []
 
     print("Dosyalar okunuyor ve birleştiriliyor...")
 
@@ -1091,40 +1078,31 @@ def accumulate_vector():
         data = torch.load(file_path)
         
         # 2. Listelere ekle
-        all_input_ids.append(data['input_ids'])
+        all_visual_output.append(data['visual_output'])
         all_input_mask.append(data['input_mask'])
         all_segment_ids.append(data['segment_ids'])
-        all_bef_image.append(data['bef_image'])
-        all_aft_image.append(data['aft_image'])
-        all_bef_semantic.append(data['bef_semantic'])
-        all_aft_semantic.append(data['aft_semantic'])
-        all_image_mask.append(data['image_mask'])
+        all_sequence_output.append(data['sequence_output'])
+        all_pair_mask.append(data['pair_mask'])
 
     # 3. Hepsini tek bir büyük Tensör yap (Concatenate)
-    final_input_ids = torch.cat(all_input_ids, dim=0)
+    final_visual_output = torch.cat(all_visual_output, dim=0)
     final_input_mask = torch.cat(all_input_mask, dim=0)
     final_segment_ids = torch.cat(all_segment_ids, dim=0)
-    final_bef_image = torch.cat(all_bef_image, dim=0)
-    final_aft_image = torch.cat(all_aft_image, dim=0)
-    final_bef_semantic = torch.cat(all_bef_semantic, dim=0)
-    final_aft_semantic = torch.cat(all_aft_semantic, dim=0)
-    final_image_mask = torch.cat(all_image_mask, dim=0)
+    final_sequence_output = torch.cat(all_sequence_output, dim=0)
+    final_pair_mask = torch.cat(all_pair_mask, dim=0)
     
 
     print("BİRLEŞTİRME TAMAMLANDI!")
-    print(f"Final Embedding Boyutu: {final_input_ids.shape}")
+    print(f"Final Embedding Boyutu: {final_sequence_output.shape}")
     # Örn Çıktı: (6121, 77, 512)
 
     # İstersen bu BÜYÜK birleşmiş halini de tek dosya olarak saklayabilirsin
     torch.save({
-        'input_ids': final_input_ids.detach().cpu(),
+        'visual_output': final_visual_output.detach().cpu(),
         'input_mask': final_input_mask.detach().cpu(),
         'segment_ids': final_segment_ids.detach().cpu(),
-        'bef_image': final_bef_image.detach().cpu(),
-        'aft_image': final_aft_image.detach().cpu(),
-        'bef_semantic': final_bef_semantic.detach().cpu(),
-        'aft_semantic': final_aft_semantic.detach().cpu(),
-        'image_mask': final_image_mask.detach().cpu()
+        'sequence_output': final_sequence_output.detach().cpu(),
+        'pair_mask': final_pair_mask.detach().cpu()
     }, "tum_veri_seti_birlestirilmis.pt")
 
 
