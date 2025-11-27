@@ -1512,7 +1512,7 @@ def main():
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
-        #accumulate_vector()
+        accumulate_vector()
 
     elif args.do_retrieval:
         # --- KULLANIM ---
