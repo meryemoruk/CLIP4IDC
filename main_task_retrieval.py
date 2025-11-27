@@ -489,8 +489,8 @@ def _run_on_single_gpu_retrieval(
     for i, c_visual_output in enumerate(okuyucu.visual_output):
         pair_mask = okuyucu.get_item(i)["pair_mask"]
         b1b2_logits, *_tmp = model.get_similarity_logits(
-            sequence_output,
-            c_visual_output,
+            sequence_output.unsqueeze(0),
+            c_visual_output.unsqueeze(0),
             input_mask,
             pair_mask,
         )
