@@ -31,7 +31,7 @@ class LEVIRCC_DataLoader(Dataset):
     
 
     max_words = 64
-    image_resolution = 256
+    image_resolution = 224
     change_caption_file_name = "merged.json"
     before_image_folder = "A"
     after_image_folder = "B"
@@ -55,7 +55,7 @@ class LEVIRCC_DataLoader(Dataset):
         if tokenizer is not None:
             self.tokenizer = tokenizer
         #else:
-        #    self.tokenizer = AutoTokenizer.from_pretrained("google/siglip-base-patch16-256")
+        #    self.tokenizer = AutoTokenizer.from_pretrained("google/siglip-base-patch16-224")
 
         change_caption_file_path = os.path.join(self.data_path, self.change_caption_file_name)
 
@@ -170,7 +170,7 @@ class LEVIRCC_DataLoader(Dataset):
             pass  # zaten tensor olduğu için değiştirmiyoruz
 
             
-        raw_image_data = raw_image_data.reshape(1, 3, 256, 256)
+        raw_image_data = raw_image_data.reshape(1, 3, 224, 224)
 
 
         image[0] = raw_image_data
