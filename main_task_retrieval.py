@@ -499,6 +499,20 @@ def _run_on_single_gpu_retrieval(
         b1b2_logits = b1b2_logits.cpu().detach().numpy()
         result.append(b1b2_logits)
 
+    # 1. Adım: argsort ile sıralama yapıldığında elemanların nereye gideceğini (indeksleri) bulur.
+    # Bu küçükten büyüğe sıralar, o yüzden sonuna dilimleme ekleriz.
+    sirali_indeksler = np.argsort(result)
+
+    # 2. Adım: En sondaki 5 indeksi al ve ters çevir (büyükten küçüğe olması için)
+    top_5_indeks = sirali_indeksler[-5:][::-1]
+
+    # 3. Adım: Bu indeksleri kullanarak değerleri çek
+    top_5_deger = result[top_5_indeks]
+
+    print("İndeksler:", top_5_indeks)
+    print("Değerler: ", top_5_deger)
+
+
     return result
 
 
