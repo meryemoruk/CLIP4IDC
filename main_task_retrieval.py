@@ -499,7 +499,7 @@ def _run_on_single_gpu_retrieval(
         b1b2_logits = b1b2_logits.cpu().detach().numpy()
         result.append(b1b2_logits)
 
-    result_tensor = torch.tensor(result)
+    """result_tensor = torch.tensor(result)
     # 1. Adım: argsort ile sıralama yapıldığında elemanların nereye gideceğini (indeksleri) bulur.
     # Bu küçükten büyüğe sıralar, o yüzden sonuna dilimleme ekleriz.
     top_5_degerler, top_5_indeksler = torch.topk(result_tensor, k=5)
@@ -509,7 +509,7 @@ def _run_on_single_gpu_retrieval(
     top_5_indeks_listesi = top_5_indeksler.cpu().numpy().tolist()
 
     print(f"Top 5 Değerler: {top_5_deger_listesi}")
-    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
+    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")"""
 
 
     return result
