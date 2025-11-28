@@ -507,7 +507,9 @@ def _run_on_single_gpu_retrieval(
     top_5_indeks = sirali_indeksler[-5:][::-1]
 
     # 3. Adım: Bu indeksleri kullanarak değerleri çek
-    top_5_deger = result[top_5_indeks]
+    top_5_deger = []
+    for i in top_5_indeks:
+        top_5_deger.append(result[i])
 
     print("İndeksler:", top_5_indeks)
     print("Değerler: ", top_5_deger)
