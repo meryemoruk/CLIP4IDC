@@ -517,6 +517,7 @@ def _run_on_single_gpu_retrieval(
 
     print(f"Top 5 Değerler: {top_5_deger_listesi}")
     print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
+    print(f"Original Resim Benzerliği: {result_flat[index]}")
 
 
     return result
