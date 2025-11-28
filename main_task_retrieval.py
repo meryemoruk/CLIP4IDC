@@ -501,18 +501,14 @@ def _run_on_single_gpu_retrieval(
 
     # 1. Adım: argsort ile sıralama yapıldığında elemanların nereye gideceğini (indeksleri) bulur.
     # Bu küçükten büyüğe sıralar, o yüzden sonuna dilimleme ekleriz.
-    sirali_indeksler = np.argsort(result)
+    top_5_degerler, top_5_indeksler = torch.topk(result, k=5)
 
-    # 2. Adım: En sondaki 5 indeksi al ve ters çevir (büyükten küçüğe olması için)
-    top_5_indeks = sirali_indeksler[-5:][::-1]
+    # Eğer bunları ekrana yazdırmak veya listeye çevirmek istersen:
+    top_5_deger_listesi = top_5_degerler.cpu().numpy().tolist()
+    top_5_indeks_listesi = top_5_indeksler.cpu().numpy().tolist()
 
-    # 3. Adım: Bu indeksleri kullanarak değerleri çek
-    top_5_deger = []
-    for i in top_5_indeks:
-        top_5_deger.append(result[i])
-
-    print("İndeksler:", top_5_indeks)
-    print("Değerler: ", top_5_deger)
+    print(f"Top 5 Değerler: {top_5_deger_listesi}")
+    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
 
 
     return result
