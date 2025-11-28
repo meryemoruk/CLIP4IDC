@@ -39,7 +39,7 @@ class LEVIRCC_DataLoader(Dataset):
         data_path,
         tokenizer,
         max_words=30,
-        image_resolution=224,
+        image_resolution=256,
     ):
         self.data_path = data_path
         self.default_features_path = os.path.join(self.data_path, "train", "rgb")
@@ -196,7 +196,7 @@ class LEVIRCC_DataLoader(Dataset):
         )
 
         raw_image_data = self.rawImageExtractor.get_image_data(image_path)
-        raw_image_data = raw_image_data["image"].reshape(1, 3, 224, 224)
+        raw_image_data = raw_image_data["image"].reshape(1, 3, 256, 256)
 
         image[0] = raw_image_data
 

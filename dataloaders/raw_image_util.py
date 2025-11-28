@@ -11,11 +11,11 @@ import cv2
 
 
 class RawImageExtractorCV2:
-    def __init__(self, centercrop=False, size=224):
+    def __init__(self, centercrop=False, size=256):
         self.centercrop = centercrop
         self.size = size
         self.transform = self._transform(self.size)
-        #self.transform = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
+        #self.transform = AutoProcessor.from_pretrained("google/siglip-base-patch16-256")
 
     def image_to_tensor(self, image_file, preprocess):
         image = Image.open(image_file).convert("RGB")
@@ -41,7 +41,7 @@ from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normal
 import cv2
 
 class RawImageExtractorCV2():
-    def __init__(self, centercrop=False, size=224):
+    def __init__(self, centercrop=False, size=256):
         self.centercrop = centercrop
         self.size = size
         self.transform = self._transform(self.size)
@@ -53,7 +53,7 @@ class RawImageExtractorCV2():
             lambda image: image.convert("RGB"),
             ToTensor(),
             Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
-            # Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.224)),
+            # Normalize((0.485, 0.456, 0.406), (0.229, 0.256, 0.256)),
         ])
 
     def image_to_tensor(self, image_file, preprocess):
