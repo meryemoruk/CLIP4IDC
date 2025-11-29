@@ -877,65 +877,26 @@ def eval_epoch_save(args, model, test_dataloader, device):
 
     if multi_sentence_:
         cut_off_points2len_ = [itm + 1 for itm in cut_off_points_]
-        max_length = max(
-            [
-                e_ - s_
-                for s_, e_ in zip(
-                    [0] + cut_off_points2len_[:-1],
-                    cut_off_points2len_,
-                )
-            ],
-        )
+        max_length = max([e_-s_ for s_, e_ in zip([0]+cut_off_points2len_[:-1], cut_off_points2len_)])
         sim_matrix_new = []
         for s_, e_ in zip([0] + cut_off_points2len_[:-1], cut_off_points2len_):
-            sim_matrix_new.append(
-                np.concatenate(
-                    (
-                        sim_matrix[s_:e_],
-                        np.full(
-                            (max_length - e_ + s_, sim_matrix.shape[1]),
-                            -np.inf,
-                        ),
-                    ),
-                    axis=0,
-                ),
-            )
+            sim_matrix_new.append(np.concatenate((sim_matrix[s_:e_],
+                                                  np.full((max_length-e_+s_, sim_matrix.shape[1]), -np.inf)), axis=0))
         sim_matrix = np.stack(tuple(sim_matrix_new), axis=0)
-        logger.info(
-            "after reshape, sim matrix size: {} x {} x {}".format(
-                sim_matrix.shape[0],
-                sim_matrix.shape[1],
-                sim_matrix.shape[2],
-            ),
-        )
+        logger.info("after reshape, sim matrix size: {} x {} x {}".
+                    format(sim_matrix.shape[0], sim_matrix.shape[1], sim_matrix.shape[2]))
 
         tv_metrics = tensor_text_to_video_metrics(sim_matrix)
         vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
 
     logger.info("Text-to-Image-Pair:")
-    logger.info(
-        "\t>>>  R@1: {:.1f} - R@5: {:.1f} - R@10: {:.1f} - Median R: {:.1f} - "
-        "Mean R: {:.1f}".format(
-            tv_metrics["R1"],
-            tv_metrics["R5"],
-            tv_metrics["R10"],
-            tv_metrics["MR"],
-            tv_metrics["MeanR"],
-        ),
-    )
+    logger.info('\t>>>  R@1: {:.1f} - R@5: {:.1f} - R@10: {:.1f} - Median R: {:.1f} - Mean R: {:.1f}'.
+                format(tv_metrics['R1'], tv_metrics['R5'], tv_metrics['R10'], tv_metrics['MR'], tv_metrics['MeanR']))
     logger.info("Image-Pair-to-Text:")
-    logger.info(
-        "\t>>>  V2T$R@1: {:.1f} - V2T$R@5: {:.1f} - V2T$R@10: {:.1f} - "
-        "V2T$Median R: {:.1f} - V2T$Mean R: {:.1f}".format(
-            vt_metrics["R1"],
-            vt_metrics["R5"],
-            vt_metrics["R10"],
-            vt_metrics["MR"],
-            vt_metrics["MeanR"],
-        ),
-    )
+    logger.info('\t>>>  V2T$R@1: {:.1f} - V2T$R@5: {:.1f} - V2T$R@10: {:.1f} - V2T$Median R: {:.1f} - V2T$Mean R: {:.1f}'.
+                format(vt_metrics['R1'], vt_metrics['R5'], vt_metrics['R10'], vt_metrics['MR'], vt_metrics['MeanR']))
 
-    R1 = tv_metrics["R1"]
+    R1 = tv_metrics['R1']
     return R1
 
 import json
@@ -1181,41 +1142,37 @@ def main():
 
         resumed_epoch = 0
         if args.resume_model:
-            checkpoint = torch.load(args.resume_model, map_location="cpu", weights_only=True)
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            resumed_epoch = checkpoint["epoch"] + 1
-            resumed_loss = checkpoint["loss"]  # noqa: F841
+            logger.info("Start Loading Optimizer.")
+            checkpoint_opt = torch.load(args.resume_model_opt, map_location='cpu')
+            resumed_epoch = checkpoint_opt['epoch']+1
+            optimizer.load_state_dict(checkpoint_opt['optimizer_state_dict'])
+            resumed_loss = checkpoint_opt['loss']
+            logger.info("End Loading Optimizer.")
+            if 'optimizer_state_dict' in checkpoint_opt:
+                ckpt_groups = len(checkpoint_opt['optimizer_state_dict']['param_groups'])
+                curr_groups = len(optimizer.param_groups)
+                logger.info(f"Optimizer param_groups -> checkpoint: {ckpt_groups}, current: {curr_groups}")
 
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
-            train_sampler.set_epoch(epoch)  # Removed for single GPU
-            tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer, scheduler, global_step, args.local_rank)
- 
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
+                train_sampler.set_epoch(epoch)
+            tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
+                                               scheduler, global_step, local_rank=args.local_rank)
+            if args.local_rank == 0:
+                logger.info("Epoch %d/%s Finished, Train Loss: %f", epoch + 1, args.epochs, tr_loss)
 
-            logger.info(
-                "Epoch %d/%s Finished, Train Loss: %f",
-                epoch + 1,
-                args.epochs,
-                tr_loss,
-            )
+                output_model_file = save_model(epoch, args, model, optimizer, tr_loss, type_name="")
 
-            output_model_file = save_model(
-                epoch,
-                args,
-                model,
-                optimizer,
-                tr_loss,
-                type_name="",
-            )
+                ## Run on val dataset, this process is *TIME-consuming*.
+                # logger.info("Eval on val dataset")
+                # R1 = eval_epoch(args, model, val_dataloader, device, n_gpu)
 
-            # Run on val dataset, this process is *TIME-consuming*.
-            R1 = eval_epoch(args, model, test_dataloader, device)
-            if best_score <= R1:
-                best_score = R1
-                best_output_model_file = output_model_file
-            logger.info(
-                f"The best model is: {best_output_model_file}, " f"the R1 is: {best_score:.4f}",
-            )
+                R1 = eval_epoch(args, model, test_dataloader, device, n_gpu)
+                if best_score <= R1:
+                    best_score = R1
+                    best_output_model_file = output_model_file
+                logger.info("The best model is: {}, the R1 is: {:.4f}".format(best_output_model_file, best_score))
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
