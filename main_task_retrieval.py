@@ -547,6 +547,7 @@ def _run_on_single_gpu_retrieval(
     print(f"Top 5 Benzerlikler: {top_5_deger_listesi}")
     print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
     print(f"Top 5 Captionlar: {top_5_captions}")
+    print(f"Top 5 Images: {top_5_images}")
     
 
 
