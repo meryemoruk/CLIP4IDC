@@ -149,7 +149,7 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
         raise ValueError(
             "Invalid gradient_accumulation_steps parameter: " f"{args.gradient_accumulation_steps}, should be >= 1",
         )
-    if not args.do_train and not args.do_eval and not args.do_retrieval:
+    if not args.do_train and not args.do_eval and not args.do_retrieval and not args.do_save_vector:
         raise ValueError(
             "At least one of `do_train` or `do_eval` or `do_retrieval` must be True.",
         )
