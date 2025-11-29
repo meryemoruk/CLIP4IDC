@@ -53,7 +53,7 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--do_retrieval", action="store_true")
     parser.add_argument("--do_save_vector", action="store_true")
 
-    parser.add_argument("--index_retrival", type=int, default=20)
+    parser.add_argument("--index_retrieval", type=int, default=20)
 
 
     parser.add_argument("--data_path", type=str, default="data/datatype", help="data file path")
@@ -1233,13 +1233,13 @@ def main():
             json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json'
         )
         # ÖRNEK 1: 50. sıradaki veriyi çekelim
-        veri = okuyucu.get_item(args.index_retrival)
-        print("\n--- "+str(args.index_retrival)+". Kayıt Bilgisi ---")
+        veri = okuyucu.get_item(args.index_retrieval)
+        print("\n--- "+str(args.index_retrieval)+". Kayıt Bilgisi ---")
         print(f"Resim Adı: {veri['image_file']}")
         print(f"Cümle:     {veri['text']}")
         print(f"sequence_output: {veri['sequence_output'].shape}")
 
-        _run_on_single_gpu_retrieval(model, args.index_retrival)
+        _run_on_single_gpu_retrieval(model, args.index_retrieval)
 
 
 
