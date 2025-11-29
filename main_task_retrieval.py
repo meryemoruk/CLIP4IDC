@@ -470,7 +470,8 @@ def _run_on_single_gpu(
 
 def _run_on_single_gpu_retrieval(
     model,
-    index
+    index,
+    split = "test"
 ):
     # Dosya yollarını kendine göre düzenle
     okuyucu = VeriSetiOkuyucu(
@@ -515,9 +516,36 @@ def _run_on_single_gpu_retrieval(
     top_5_deger_listesi = top_5_degerler.cpu().numpy().tolist()
     top_5_indeks_listesi = top_5_indeksler.cpu().numpy().tolist()
 
-    print(f"Top 5 Değerler: {top_5_deger_listesi}")
-    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
+    top_5_captions = []
+    top_5_images = []
+    for i in top_5_deger_listesi:
+        top_5_captions.append(okuyucu.get_item(i)["raw_text"])
+        top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "A",
+            okuyucu.get_item(i)["image_filename"]))
+        top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "B",
+            okuyucu.get_item(i)["image_filename"]))
+        
+    
+    import shutil
+
+    # 1. Create the folder if it doesn't exist
+    target_folder = 'retrivalImages/'
+    os.makedirs(target_folder, exist_ok=True)
+    
+    for i, path in enumerate(top_5_images):
+        image_name = str(i) + ".png"
+        dst_path = os.path.join(target_folder, image_name)
+        # copy2 preserves metadata (creation time, modification time, etc.)
+        shutil.copy2(path, dst_path)
+
+        print(f"Copied to {dst_path}")
+    
+
     print(f"Original Resim Benzerliği: {result_flat[index]}")
+    print(f"Top 5 Benzerlikler: {top_5_deger_listesi}")
+    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
+    print(f"Top 5 Captionlar: {top_5_captions}")
+    
 
 
     return result
