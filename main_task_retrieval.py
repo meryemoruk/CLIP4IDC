@@ -51,6 +51,7 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.") 
     parser.add_argument("--do_retrieval", action="store_true")
+    parser.add_argument("--do_save_vector", action="store_true")
 
     parser.add_argument("--data_path", type=str, default="data/datatype", help="data file path")
     parser.add_argument("--features_path", type=str, default="data/datatype/images", help="feature path")
@@ -731,7 +732,7 @@ def eval_epoch(args, model, test_dataloader, device):
     R1 = tv_metrics["R1"]
     return R1
 
-def eval_epoch(args, model, test_dataloader, device):
+def eval_epoch_save(args, model, test_dataloader, device):
     if hasattr(model, "module"):
         model = model.module.to(device)
     else:
@@ -1214,7 +1215,10 @@ def main():
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
-        #accumulate_vector()
+
+    elif args.do_save_vector:
+        eval_epoch_save(args, model, test_dataloader, device)
+        accumulate_vector()
 
     elif args.do_retrieval:
         # --- KULLANIM ---
@@ -1231,7 +1235,7 @@ def main():
         print(f"Cümle:     {veri_50['text']}")
         print(f"sequence_output: {veri_50['sequence_output'].shape}")
 
-        print(_run_on_single_gpu_retrieval(model, 50))
+        _run_on_single_gpu_retrieval(model, 50)
 
 
 
