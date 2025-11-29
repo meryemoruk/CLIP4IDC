@@ -519,11 +519,12 @@ def _run_on_single_gpu_retrieval(
     top_5_captions = []
     top_5_images = []
     for i in top_5_deger_listesi:
-        top_5_captions.append(okuyucu.get_item(i)["raw_text"])
+        tempData = okuyucu.get_item(i)
+        top_5_captions.append(tempData["text"])
         top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "A",
-            okuyucu.get_item(i)["image_filename"]))
+            tempData["image_file"]))
         top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "B",
-            okuyucu.get_item(i)["image_filename"]))
+            tempData["image_file"]))
         
     
     import shutil
