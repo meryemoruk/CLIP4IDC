@@ -1168,7 +1168,7 @@ def main():
                 # logger.info("Eval on val dataset")
                 # R1 = eval_epoch(args, model, val_dataloader, device, n_gpu)
 
-                R1 = eval_epoch(args, model, test_dataloader, device, n_gpu)
+                R1 = eval_epoch(args, model, test_dataloader, device)
                 if best_score <= R1:
                     best_score = R1
                     best_output_model_file = output_model_file
