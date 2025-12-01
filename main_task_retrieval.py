@@ -553,8 +553,8 @@ def _run_on_single_gpu_retrieval(
     print(f"Top 5 Images: {top_5_images}")
 
     og_index = -1
-    for i in top_5_indeks_listesi:
-        if(top_5_indeks_listesi[i] == index):
+    for i, m in enumerate(top_5_indeks_listesi):
+        if(m == index):
             og_index = i
             break
     
