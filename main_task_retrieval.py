@@ -554,8 +554,9 @@ def _run_on_single_gpu_retrieval(
 
     og_index = -1
     for i in top_5_indeks_listesi:
-        if(i == index):
+        if(top_5_indeks_listesi[i] == index):
             og_index = i
+            break
     
     print(f"Original index:{og_index}")
 
