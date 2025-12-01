@@ -551,7 +551,25 @@ def _run_on_single_gpu_retrieval(
     print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
     print(f"Top 5 Captionlar: {top_5_captions}")
     print(f"Top 5 Images: {top_5_images}")
+
+    og_index = -1
+    for i in top_5_indeks_listesi:
+        if(i == index):
+            og_index = i
     
+    print(f"Original index:{og_index}")
+
+    import json
+
+    inference_result = {
+        "index": index,
+        "rank": og_index,
+        "confidence": top_5_deger_listesi[0]
+    }
+
+    with open("inference_results.json", "a", encoding="utf-8") as f:
+        json.dump(inference_result, f, indent=4) # indent=4 okunabilir formatlar
+
 
 
     return result
