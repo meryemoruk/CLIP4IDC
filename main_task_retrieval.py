@@ -515,6 +515,7 @@ def _run_on_single_gpu_retrieval(
     # 1. Adım: argsort ile sıralama yapıldığında elemanların nereye gideceğini (indeksleri) bulur.
     # Bu küçükten büyüğe sıralar, o yüzden sonuna dilimleme ekleriz.
     top_5_degerler, top_5_indeksler = torch.topk(result_tensor, k=5)
+    tum_sirali_indeksler = torch.argsort(result_tensor, descending=True)
 
     # Eğer bunları ekrana yazdırmak veya listeye çevirmek istersen:
     top_5_deger_listesi = top_5_degerler.cpu().numpy().tolist()
@@ -553,7 +554,7 @@ def _run_on_single_gpu_retrieval(
     print(f"Top 5 Images: {top_5_images}")
 
     og_index = -1
-    for i, m in enumerate(top_5_indeks_listesi):
+    for i, m in enumerate(tum_sirali_indeksler):
         if(m == index):
             og_index = i
             break
