@@ -558,7 +558,7 @@ def _run_on_single_gpu_retrieval(
             og_index = i
             break
     
-    print(f"Original index:{og_index}")
+    #print(f"Original index:{og_index}")
 
     import json
 
