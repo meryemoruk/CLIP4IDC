@@ -566,7 +566,7 @@ def _run_on_single_gpu_retrieval(
     catag_id = [-1,-1,-1]
     og_catag_id = -1
     
-
+    import json
     with open(json_path_catag, 'r') as f:
         # Parse file content directly into a Python object
         jsonCatag = json.load(f)
