@@ -483,6 +483,8 @@ def _run_on_single_gpu_retrieval(
         json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json'
     )
 
+    json_path_catag = '/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged_catag.json'
+
     data = okuyucu.get_item(index)
 
     input_mask = data["input_mask"]
@@ -559,15 +561,41 @@ def _run_on_single_gpu_retrieval(
             og_index = i
             break
     
-    #print(f"Original index:{og_index}")
+    data_found = []
+    found_name = []
+    catag_id = [-1,-1,-1]
+    og_catag_id = -1
+    
+
+    with open(json_path_catag, 'r') as f:
+        # Parse file content directly into a Python object
+        jsonCatag = json.load(f)
+        for image_entry in jsonCatag['images']:
+                if image_entry.get('filename') == data["image_file"]:
+                    og_catag_id = image_entry["category"]
+                    break
+        for i in range(0,3):
+            data_found[i] = okuyucu.get_item(tum_sirali_indeksler[i])
+            found_name[i] = data_found["image_name"]
+            for image_entry in jsonCatag['images']:
+                if image_entry.get('filename') == found_name[i]:
+                    catag_id[i] = image_entry["category"]
+                    break
+
 
     import json
 
     inference_result = {
         "index": index,
         "rank": og_index,
-        "confidence": top_5_deger_listesi[0]
+        "confidence": top_5_deger_listesi[0],
+        "o_catag": og_catag_id,
+        "f_catag_1": catag_id[0],
+        "f_catag_2": catag_id[1],
+        "f_catag_3": catag_id[2]
     }
+
+    
 
     with open("inference_results.json", "a", encoding="utf-8") as f:
         json.dump(inference_result, f, indent=4) # indent=4 okunabilir formatlar
