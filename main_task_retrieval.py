@@ -576,7 +576,7 @@ def _run_on_single_gpu_retrieval(
                     break
         for i in range(0,3):
             data_found.append(okuyucu.get_item(tum_sirali_indeksler[i])) 
-            found_name.append(data_found[i]["image_name"])
+            found_name.append(data_found[i]["image_file"])
             for image_entry in jsonCatag['images']:
                 if image_entry.get('filename') == found_name[i]:
                     catag_id[i] = image_entry["category"]
