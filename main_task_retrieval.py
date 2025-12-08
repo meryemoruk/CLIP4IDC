@@ -1223,9 +1223,13 @@ def main():
                 logger.info("The best model is: {}, the R1 is: {:.4f}".format(best_output_model_file, best_score))
 
     elif args.do_eval:
+        train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
+
         eval_epoch(args, model, train_dataloader, device)
 
     elif args.do_save_vector:
+        train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
+
         eval_epoch_save(args, model, train_dataloader, device)
         accumulate_vector()
 
