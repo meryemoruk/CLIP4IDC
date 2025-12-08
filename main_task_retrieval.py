@@ -1237,9 +1237,14 @@ def main():
         # --- KULLANIM ---
 
         # Dosya yollarını kendine göre düzenle
+        if(args.dataloader_path == "train1"):
+            split = "train"
+
+        # Dosya yollarını kendine göre düzenle
         okuyucu = VeriSetiOkuyucu(
             tensor_path='tum_veri_seti_birlestirilmis.pt', 
-            json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json'
+            json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json',
+            split = split
         )
         # ÖRNEK 1: 50. sıradaki veriyi çekelim
         veri = okuyucu.get_item(args.index_retrieval)
