@@ -53,6 +53,8 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--do_retrieval", action="store_true")
     parser.add_argument("--do_save_vector", action="store_true")
 
+    parser.add_argument("--dataloader_type", type=str, default="test")
+
     parser.add_argument("--index_retrieval", type=int, default=20)
 
 
@@ -828,9 +830,7 @@ def eval_epoch_save(args, model, test_dataloader, device):
         print("İşlem başlıyor, veriler parça parça diske yazılacak...")
 
         for bid, batch in enumerate(test_dataloader):
-            logger.warning("Flag!!!!")
             batch = tuple(t.to(device) for t in batch)
-            
             (
                 input_ids,
                 input_mask,
@@ -1131,11 +1131,11 @@ def main():
     # ####################################
     assert args.datatype in DATALOADER_DICT
 
-    assert DATALOADER_DICT[args.datatype]["test"] is not None or DATALOADER_DICT[args.datatype]["val"] is not None
+    assert DATALOADER_DICT[args.datatype][args.dataloader_type] is not None or DATALOADER_DICT[args.datatype]["val"] is not None
 
     test_dataloader, test_length = None, 0
-    if DATALOADER_DICT[args.datatype]["test"] is not None:
-        test_dataloader, test_length = DATALOADER_DICT[args.datatype]["test"](args, tokenizer)
+    if DATALOADER_DICT[args.datatype][args.dataloader_type] is not None:
+        test_dataloader, test_length = DATALOADER_DICT[args.datatype][args.dataloader_type](args, tokenizer)
 
     if DATALOADER_DICT[args.datatype]["val"] is not None:
         val_dataloader, val_length = DATALOADER_DICT[args.datatype]["val"](
@@ -1223,14 +1223,10 @@ def main():
                 logger.info("The best model is: {}, the R1 is: {:.4f}".format(best_output_model_file, best_score))
 
     elif args.do_eval:
-        train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
-
-        eval_epoch(args, model, train_dataloader, device)
+        eval_epoch(args, model, test_dataloader, device)
 
     elif args.do_save_vector:
-        train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
-
-        eval_epoch_save(args, model, train_dataloader, device)
+        eval_epoch_save(args, model, test_dataloader, device)
         accumulate_vector()
 
     elif args.do_retrieval:
