@@ -1223,10 +1223,10 @@ def main():
                 logger.info("The best model is: {}, the R1 is: {:.4f}".format(best_output_model_file, best_score))
 
     elif args.do_eval:
-        eval_epoch(args, model, test_dataloader, device)
+        eval_epoch(args, model, train_dataloader, device)
 
     elif args.do_save_vector:
-        eval_epoch_save(args, model, test_dataloader, device)
+        eval_epoch_save(args, model, train_dataloader, device)
         accumulate_vector()
 
     elif args.do_retrieval:

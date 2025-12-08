@@ -722,16 +722,20 @@ class CLIP(nn.Module):
         # combined_visual_features = image_features_pooled + semantic_features_pooled
         combined_visual_features = self.visual_fusion(image_features_pooled, semantic_features_pooled)
 
+        # 4. HATA BURADAYDI: image_features_pooled yerine combined_visual_features kullanılmalı
+        # T1 ve T2 görüntülerinin CLS token'larını (Index 0 ve 50) alıp ortalamasını alıyoruz.
         x = torch.cat(
-            [image_features_pooled[:, 0, :].unsqueeze(1), image_features_pooled[:, 50, :].unsqueeze(1)], 1
+            [
+                combined_visual_features[:, 0, :].unsqueeze(1),  # T1 CLS Token (Fused)
+                combined_visual_features[:, 50, :].unsqueeze(1)  # T2 CLS Token (Fused)
+            ], 
+            1
         )
-        x = torch.mean(x, 1)
-        # x = hidden[:, 0, :]
+        x = torch.mean(x, 1) # Global Representation
 
         if return_hidden:
-            return x, image_features_pooled
-
-        return x
+            # 5. Decoder'a da FUSED özellikleri göndermeliyiz
+            return x, combined_visual_features
 
     def encode_text(self, text, return_hidden=False):
         x = self.token_embedding(text).type(
