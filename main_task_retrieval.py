@@ -481,7 +481,7 @@ def _run_on_single_gpu_retrieval(
     split = "test"
 ):
     # Dosya yollarını kendine göre düzenle
-    if(args.dataloader_path == "train1"):
+    if(args.dataloader_type == "train1"):
         split = "train"
     okuyucu = VeriSetiOkuyucu(
         tensor_path='tum_veri_seti_birlestirilmis.pt', 
@@ -1237,7 +1237,7 @@ def main():
         # --- KULLANIM ---
 
         # Dosya yollarını kendine göre düzenle
-        if(args.dataloader_path == "train1"):
+        if(args.dataloader_type == "train1"):
             split = "train"
 
         # Dosya yollarını kendine göre düzenle
