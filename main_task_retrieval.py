@@ -1170,6 +1170,12 @@ def main():
     # ####################################
     if args.do_train:
         train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
+        train_eval_dataloader, train_eval_length = DATALOADER_DICT[args.datatype]["train1"](
+            args,
+            tokenizer,
+            subset="train1",
+        )
+        
         num_train_optimization_steps = (
             int(len(train_dataloader) + args.gradient_accumulation_steps - 1) / args.gradient_accumulation_steps
         ) * args.epochs
@@ -1220,11 +1226,15 @@ def main():
 
                 output_model_file = save_model(epoch, args, model, optimizer, tr_loss, type_name="")
 
-                ## Run on val dataset, this process is *TIME-consuming*.
-                # logger.info("Eval on val dataset")
-                # R1 = eval_epoch(args, model, val_dataloader, device, n_gpu)
+                if(epoch%10 == 0):
+                    logger.info("--------------------Eval on train dataset------------------")
+                    R1 = eval_epoch(args, model, train_eval_dataloader, device)
 
-                R1 = eval_epoch(args, model, test_dataloader, device)
+                ## Run on val dataset, this process is *TIME-consuming*.
+                logger.info("--------------------Eval on val dataset------------------")
+                R1 = eval_epoch(args, model, val_dataloader, device)
+
+                #R1 = eval_epoch(args, model, test_dataloader, device)
                 if best_score <= R1:
                     best_score = R1
                     best_output_model_file = output_model_file
