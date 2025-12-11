@@ -899,7 +899,11 @@ def eval_epoch_save(args, model, test_dataloader, device):
                 }
                 
                 # Her batch için benzersiz bir isim: batch_0.pt, batch_1.pt...
-                file_name = os.path.join(output_folder, f"batch_{bid}.pt")
+                file_name = ""
+                if(bid < 10):
+                    file_name = os.path.join(output_folder, f"batch_0{bid}.pt")
+                else:
+                    file_name = os.path.join(output_folder, f"batch_{bid}.pt")
                 torch.save(batch_data, file_name)
 
                 # İstersen takip için log bas
