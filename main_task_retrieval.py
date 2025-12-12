@@ -1219,7 +1219,7 @@ def main():
                     best_score = R1
                     output_model_file = save_model(epoch, args, model, optimizer, tr_loss, type_name="")
                     best_output_model_file = output_model_file
-                    logger.info("The best model is saved, the R1 is: {:.4f}".format(best_score))
+                    logger.info("The best model is saved in %d. epoch, the R1 is: %.4f", epoch, best_score)
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
