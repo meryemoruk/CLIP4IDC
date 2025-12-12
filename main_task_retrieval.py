@@ -477,6 +477,7 @@ def _run_on_single_gpu(
 def _run_on_single_gpu_retrieval(
     args,
     model,
+    inference_result,
     index,
     split = "test"
 ):
@@ -591,7 +592,7 @@ def _run_on_single_gpu_retrieval(
 
     import json
 
-    inference_result = {
+    inference_result_data = {
         "index": index,
         "rank": og_index,
         "confidence": top_5_deger_listesi[0],
@@ -601,12 +602,7 @@ def _run_on_single_gpu_retrieval(
         "f_catag_3": catag_id[2]
     }
 
-    
-
-    with open("inference_results.json", "a", encoding="utf-8") as f:
-        json.dump(inference_result, f, indent=4) # indent=4 okunabilir formatlar
-
-
+    inference_result["list"].append(inference_result_data)    
 
     return result
 
@@ -1267,10 +1263,16 @@ def main():
         ]
         randomList = [594, 815, 777, 566, 363, 470, 744, 311, 538, 578, 831, 470, 5, 709, 541, 509, 725, 13, 652, 143, 808, 11, 51, 644, 61, 662, 789, 356, 55, 447, 686, 181, 247, 780, 304, 797, 64, 479, 87, 61, 770, 325, 591, 182, 174, 691, 761, 99, 252, 450, 222, 464, 160, 318, 553, 544, 55, 396, 724, 467, 138, 831, 519, 291, 425, 606, 470, 2, 608, 743, 49, 660, 72, 551, 39, 612, 101, 109, 223, 442, 111, 292, 117, 533, 303, 407, 450, 222, 548, 356, 822, 252, 618, 837, 772, 126, 66, 693, 644, 580]
         a = 1
+        import json
+        inference_result = {"list" : []}
+        
         for i in randomList:
             print("\n--- "+str(a)+". İndex ---")
-            _run_on_single_gpu_retrieval(args,model, i)
+            _run_on_single_gpu_retrieval(args,model, inference_result, i)
             a = a+1
+
+        with open("inference_results.json", "a", encoding="utf-8") as f:
+            json.dump(inference_result, f, indent=4) # indent=4 okunabilir formatlar
             
 
 
