@@ -299,9 +299,9 @@ def save_model(epoch, args, model, optimizer, tr_loss, type_name=""):
     # Only save the model it-self
     model_to_save = model.module if hasattr(model, 'module') else model
     output_model_file = os.path.join(
-        args.output_dir, "pytorch_model.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
+        args.output_dir, "pytorch_model.bin.0")
     optimizer_state_file = os.path.join(
-        args.output_dir, "pytorch_opt.bin.{}{}".format("" if type_name=="" else type_name+".", epoch))
+        args.output_dir, "pytorch_opt.bin.0")
     torch.save(model_to_save.state_dict(), output_model_file)
     torch.save({
             'epoch': epoch,
@@ -1206,11 +1206,9 @@ def main():
             if args.local_rank == 0:
                 logger.info("Epoch %d/%s Finished, Train Loss: %f", epoch + 1, args.epochs, tr_loss)
 
-                output_model_file = save_model(epoch, args, model, optimizer, tr_loss, type_name="")
-
-                if(epoch%10 == 0):
+                """if(epoch%10 == 0):
                     logger.info("--------------------Eval on train dataset------------------")
-                    R1 = eval_epoch(args, model, train_eval_dataloader, device)
+                    eval_epoch(args, model, train_eval_dataloader, device)"""
 
                 ## Run on val dataset, this process is *TIME-consuming*.
                 logger.info("--------------------Eval on val dataset------------------")
@@ -1219,8 +1217,9 @@ def main():
                 #R1 = eval_epoch(args, model, test_dataloader, device)
                 if best_score <= R1:
                     best_score = R1
+                    output_model_file = save_model(epoch, args, model, optimizer, tr_loss, type_name="")
                     best_output_model_file = output_model_file
-                logger.info("The best model is: {}, the R1 is: {:.4f}".format(best_output_model_file, best_score))
+                    logger.info("The best model is saved, the R1 is: {:.4f}".format(best_score))
 
     elif args.do_eval:
         eval_epoch(args, model, test_dataloader, device)
