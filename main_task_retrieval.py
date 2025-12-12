@@ -870,26 +870,36 @@ def eval_epoch_save(args, model, test_dataloader, device):
                 s_, e_ = total_pair_num, total_pair_num + b
                 filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
 
-                if len(filter_inds) > 0:
-                    image_pair, pair_mask = (
-                        image_pair[filter_inds, ...],
-                        image_mask[filter_inds, ...],
-                    )
+              
+                # ... (Visual Output Hesaplandıktan Hemen Sonra) ...
 
-                    semantic_pair, pair_mask = (
-                        semantic_pair[filter_inds, ...],
-                        image_mask[filter_inds, ...],
-                    )
-                    visual_output, _ = model.get_visual_output(
+                # sequence_output ZATEN tekil (Batch Size, 512)
+                # Örn: (10, 512) -> 10 cümle
+                
+                if len(filter_inds) > 0:
+                     # Model burada gereksiz işlem yapmamak için görseli sıkıştırılmış çıkarır
+                     # Örn: (2, 512) -> 2 resim
+                     visual_output_compressed, _ = model.get_visual_output(
                         image_pair,
                         semantic_pair,
                         pair_mask,
                     )
-
-                    batch_visual_output_list.append(visual_output)
-                    batch_list_v.append((pair_mask,))
-                total_pair_num += b
-
+                     
+                     # --- SİZİN İSTEDİĞİNİZ 5'Lİ LOOP'UN VEKTÖREL HALİ ---
+                     # Sıkıştırılmış görseli (2, 512) al, her satırı 5 kere tekrarla.
+                     # Sonuç: (10, 512) olur. Sequence ile birebir aynı boyuta gelir.
+                     
+                     visual_output = visual_output_compressed.repeat_interleave(sentence_num_, dim=0)
+                     pair_mask = pair_mask.repeat_interleave(sentence_num_, dim=0)
+                     
+                     # Listeye ekle
+                     batch_visual_output_list.append(visual_output)
+                     batch_list_v.append((pair_mask,))
+                
+                # --- KAYIT KISMI (ARTIK GÜVENLİ) ---
+                # Artık sequence ve visual boyutları EŞİT olduğu için güvenle kaydedebilirsin.
+                                
+                # ... torch.save işlemleri ...
                 batch_data = {
                     'visual_output': visual_output.detach().cpu(),
                     'sequence_output': sequence_output.detach().cpu(),
@@ -897,7 +907,7 @@ def eval_epoch_save(args, model, test_dataloader, device):
                     'segment_ids': segment_ids.detach().cpu(),
                     'pair_mask': pair_mask.detach().cpu(),
                 }
-                
+
                 # Her batch için benzersiz bir isim: batch_0.pt, batch_1.pt...
                 file_name = ""
                 if(bid < 10):
@@ -1057,6 +1067,14 @@ def accumulate_vector():
     final_segment_ids = torch.cat(all_segment_ids, dim=0)
     final_sequence_output = torch.cat(all_sequence_output, dim=0)
     final_pair_mask = torch.cat(all_pair_mask, dim=0)
+
+    # Güvenlik Kontrolü
+    print(f"metin Satır Sayısı: {len(all_sequence_output)}")
+    print(f"görsel Satır Sayısı:  {len(all_visual_output)}")
+    
+    if len(all_sequence_output) != len(all_visual_output):
+        print("UYARI: Tensor ve Metin sayıları uyuşmuyor! Veri setinde eksik cümleler olabilir.")
+
     
 
     print("BİRLEŞTİRME TAMAMLANDI!")
