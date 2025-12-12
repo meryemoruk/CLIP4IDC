@@ -917,23 +917,36 @@ def eval_epoch_save(args, model, test_dataloader, device):
             # 3. Kaydetme İşlemi (Güvenli)
             # -----------------------------------------------------------
             # Sadece visual_output hesaplandıysa kaydet (Boş geçilen batch olmamalı)
+            # ... (visual_output hesaplandıktan sonra) ...
+
+            # -----------------------------------------------------------
+            # 3. Kaydetme İşlemi (Güvenli Yama)
+            # -----------------------------------------------------------
             if visual_output is not None:
                 
-                # Son güvenlik kontrolü: Eşitler mi?
-                if visual_output.shape[0] != sequence_output.shape[0]:
-                    print(f"\n[UYARI] Batch {bid} içinde boyut farkı var!")
-                    print(f"Text: {sequence_output.shape[0]}, Visual: {visual_output.shape[0]}")
-                    # Burada kesmek yerine minimum boyuta göre kırpabiliriz veya hata verebiliriz
-                    # Şimdilik hata verip durduralım çünkü veri bozuk olur.
-                    raise ValueError("Text ve Visual sayıları eşitlenemedi.")
+                # --- YAMA BAŞLANGICI ---
+                # Eğer Görsel sayısı Metin sayısından fazlaysa (Örn: 135 > 125), fazlalığı kes.
+                if visual_output.shape[0] > sequence_output.shape[0]:
+                    print(f"[BİLGİ] Batch {bid}: Görsel ({visual_output.shape[0]}) > Metin ({sequence_output.shape[0]}). Fazlalık kırpılıyor.")
+                    # Fazlalığı sondan kesiyoruz
+                    visual_output = visual_output[:sequence_output.shape[0]]
+                    pair_mask = pair_mask[:sequence_output.shape[0]] # Maskeyi de kesmeyi unutma
+                
+                # Eğer Metin sayısı Görselden fazlaysa (Eksik resim varsa) -> HATA (Buna yapacak bir şey yok)
+                elif visual_output.shape[0] < sequence_output.shape[0]:
+                     print(f"[KRİTİK HATA] Batch {bid}: Resim eksik! Text: {sequence_output.shape[0]}, Visual: {visual_output.shape[0]}")
+                     # Burada veri kaybı olacağı için durmak en iyisidir
+                     raise ValueError("Resim sayısı yetersiz, veri sırası bozuk.")
+                # --- YAMA BİTİŞİ ---
 
                 batch_data = {
-                    'visual_output': visual_output,       # [B, 512]
-                    'sequence_output': sequence_output,   # [B, 512]
+                    'visual_output': visual_output,
+                    'sequence_output': sequence_output,
                     'input_mask': input_mask.detach().cpu(),
                     'segment_ids': segment_ids.detach().cpu(),
                     'pair_mask': pair_mask
                 }
+                # ...
 
                 # Sıfır dolgulu dosya ismi (Sıralama için önemli: batch_0001.pt)
                 file_name = os.path.join(output_folder, f"batch_{bid:05d}.pt")
