@@ -807,7 +807,7 @@ def eval_epoch_save(args, model, test_dataloader, device):
     if hasattr(test_dataloader.dataset, "multi_sentence_per_pair") and test_dataloader.dataset.multi_sentence_per_pair:
         multi_sentence_ = True
         cut_off_points_ = test_dataloader.dataset.cut_off_points
-        sentence_num_ = test_dataloader.dataset.sentence_num
+        sentence_num_ = 5
         pair_num_ = test_dataloader.dataset.image_num
         cut_off_points_ = [itm - 1 for itm in cut_off_points_]
 
