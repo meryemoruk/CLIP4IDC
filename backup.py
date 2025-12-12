@@ -791,251 +791,312 @@ def eval_epoch(args, model, test_dataloader, device):
     return R1
 
 def eval_epoch_save(args, model, test_dataloader, device):
-    """
-    Modelden sequence ve visual outputları çıkarır ve bir .pt dosyasına kaydeder.
-    """
     if hasattr(model, "module"):
         model = model.module.to(device)
     else:
         model = model.to(device)
 
+    # #################################################################
+    # Multi-Sentence Ayarları
+    # #################################################################
+    # Bu ayarların açık kalması gerekiyor ki 'filter_inds' hesaplayabilelim
+    # ve gereksiz yere aynı resim için 5 kere GPU çalıştırmayalım.
+    multi_sentence_ = False
+    cut_off_points_, sentence_num_, pair_num_ = [], -1, -1
+    
+    if hasattr(test_dataloader.dataset, "multi_sentence_per_pair") and test_dataloader.dataset.multi_sentence_per_pair:
+        multi_sentence_ = True
+        cut_off_points_ = test_dataloader.dataset.cut_off_points
+        sentence_num_ = 5
+        pair_num_ = test_dataloader.dataset.image_num
+        cut_off_points_ = [itm - 1 for itm in cut_off_points_]
+
+    # Eğer sentence_num_ bir şekilde -1 geldiyse (tekil modda) varsayılan 1 yapalım
+    if sentence_num_ == -1:
+        sentence_num_ = 1
+
+    print(f"--- KAYIT MODU ---")
+    print(f"Her resim için {sentence_num_} kopya oluşturulacak.")
+    print(f"Batch Size: {test_dataloader.batch_size} (5'in katı olmalı!)")
+
     model.eval()
+    
+    # Çıktı klasörünü hazırla
+    output_folder = "batch_kayitlari"
+    if os.path.exists(output_folder):
+        import shutil
+        # Eski kayıtları temizleyelim ki karışıklık olmasın (İsteğe bağlı)
+        # shutil.rmtree(output_folder)
+        # os.makedirs(output_folder)
+        pass
+    else:
+        os.makedirs(output_folder, exist_ok=True)
 
-    all_sequence_outputs = []
-    all_visual_outputs = []
-    all_input_masks = []
-    all_pair_masks = [] # Görüntü maskeleri
-    all_image_filenames = []
-    all_texts = []
-    all_segment_ids = []
-
-    logger.info("Veri seti vektörleri çıkarılıyor ve birleştiriliyor...")
+    total_pair_num = 0
 
     with torch.no_grad():
+        # RAM Şişmesini önlemek için liste tanımlamıyoruz! (batch_list_v vs yok)
+
         for bid, batch in enumerate(test_dataloader):
             batch = tuple(t.to(device) for t in batch)
             (
-                input_ids,
-                input_mask,
-                segment_ids,
-                bef_image,
-                aft_image,
-                bef_semantic,
-                aft_semantic,
+                input_ids, input_mask, segment_ids,
+                bef_image, aft_image,
+                bef_semantic, aft_semantic,
                 image_mask,
             ) = batch
 
-            # 1. Metin Feature Çıkarma
-            sequence_output, _ = model.get_sequence_output(
-                input_ids,
-                segment_ids,
-                input_mask,
-            )
-
-            # 2. Görüntü Feature Çıkarma
-            # CLIP4IDC yapısına göre image pair birleştiriliyor
             image_pair = torch.cat([bef_image, aft_image], 1)
             semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
-            
-            visual_output, _ = model.get_visual_output(
-                image_pair,
-                semantic_pair,
-                image_mask,
+
+            # -----------------------------------------------------------
+            # 1. Metin (Sequence) Hesapla (Her cümle için hesaplanır)
+            # -----------------------------------------------------------
+            # sequence_output boyutu: [Batch_Size, 512] (Örn: 50, 512)
+            sequence_output, _ = model.get_sequence_output(
+                input_ids, segment_ids, input_mask
             )
-
-            # 3. CPU'ya alıp listeye ekle (GPU hafızası şişmesin diye)
-            all_sequence_outputs.append(sequence_output.cpu())
-            all_visual_outputs.append(visual_output.cpu())
-            all_input_masks.append(input_mask.cpu())
-            all_pair_masks.append(image_mask.cpu())
-            all_segment_ids.append(segment_ids.cpu())
-
-            # 4. Dosya isimlerini ve metinleri dataloader'dan almak gerekebilir
-            # Eğer dataloader batch içinde raw text veya filename döndürmüyorsa,
-            # dataset objesinden indeksle erişmemiz gerekebilir.
-            # Burada toplu işlem (batch) indekslerini takip ederek datasetten çekiyoruz:
             
-            # Not: Distributed sampler kullanılıyorsa indeksler karışık olabilir, 
-            # ancak test modunda genelde sequential sampler kullanılır.
-            start_idx = bid * args.batch_size_val
-            end_idx = start_idx + input_ids.size(0)
+            # GPU'da tutmaya gerek yok, hemen CPU'ya al
+            sequence_output = sequence_output.detach().cpu()
+
+            # -----------------------------------------------------------
+            # 2. Görsel (Visual) Hesapla (Benzersiz resimler için)
+            # -----------------------------------------------------------
+            visual_output = None
             
-            for i in range(start_idx, end_idx):
-                if i < len(test_dataloader.dataset):
-                    # Dataset yapınıza göre bu key'ler değişebilir ('image_file', 'text')
-                    # CLIP4IDC dataset yapısında genelde __getitem__ dict döner ama 
-                    # dataloader collate_fn ile tensor yapar. Raw dataya dataset.raw_data veya benzeri bir yerden ulaşırız.
-                    # Eğer datasetinizde doğrudan get_item varsa:
-                    # (Bu kısım dataset sınıfınızın yapısına bağlı, varsayımsal yazıyorum)
+            if multi_sentence_:
+                # Batch içindeki toplam pair sayısını (batch size'ı) al
+                b, *_t = image_pair.shape
+                
+                # Bu batch içindeki benzersiz resimlerin indekslerini bul
+                s_, e_ = total_pair_num, total_pair_num + b
+                filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
+                
+                # Sadece benzersiz resimler için GPU çalıştır (Optimizasyon)
+                if len(filter_inds) > 0:
+                    image_pair_filtered = image_pair[filter_inds, ...]
+                    semantic_pair_filtered = semantic_pair[filter_inds, ...]
+                    pair_mask_filtered = image_mask[filter_inds, ...]
+
+                    # Model Çıktısı: [Unique_Image_Count, 512] (Örn: 10, 512)
+                    visual_output_raw, _ = model.get_visual_output(
+                        image_pair_filtered,
+                        semantic_pair_filtered,
+                        pair_mask_filtered,
+                    )
+                    
+                    # GPU'dan kurtar
+                    visual_output_raw = visual_output_raw.detach().cpu()
+                    pair_mask_raw = pair_mask_filtered.detach().cpu()
+
+                    # -----------------------------------------------------
+                    # ALIGNMENT (HİZALAMA) - 1. HATA ÇÖZÜMÜ
+                    # -----------------------------------------------------
+                    # Görseli cümle sayısı kadar çoğalt (Örn: 10 -> 50)
                     try:
-                        raw_item = test_dataloader.dataset.get_raw_item(i) # Özel bir fonksiyon varsayıyoruz
-                        all_image_filenames.append(raw_item['image_file'])
-                        all_texts.append(raw_item['text'])
-                    except:
-                        # Fallback: Eğer get_raw_item yoksa, veri setini tekrar okumak yerine
-                        # bu adımı sonraya bırakabiliriz veya datasetin içindeki listeden alabiliriz.
-                        # Örnek:
-                        if hasattr(test_dataloader.dataset, 'data_list'):
-                             item = test_dataloader.dataset.data_list[i]
-                             all_image_filenames.append(item.get('image_file', 'unknown.jpg'))
-                             all_texts.append(item.get('text', ''))
-                        else:
-                            all_image_filenames.append("unknown.jpg")
-                            all_texts.append("unknown text")
-
-            if bid % 10 == 0:
-                logger.info(f"Batch {bid}/{len(test_dataloader)} işlendi.")
-
-    # Tüm listeleri tek bir büyük tensora/listeye çevir
-    save_data = {
-        "sequence_output": torch.cat(all_sequence_outputs, dim=0),
-        "visual_output": torch.cat(all_visual_outputs, dim=0),
-        "input_mask": torch.cat(all_input_masks, dim=0),
-        "pair_mask": torch.cat(all_pair_masks, dim=0),
-        "segment_ids": torch.cat(all_segment_ids, dim=0),
-        "image_filenames": all_image_filenames,
-        "texts": all_texts
-    }
-
-    output_path = os.path.join(args.output_dir, "tum_veri_seti_birlestirilmis.pt")
-    torch.save(save_data, output_path)
-    logger.info(f"✅ Tüm vektörler kaydedildi: {output_path}")
-    logger.info(f"Toplam Veri Sayısı: {len(all_image_filenames)}")
-
-def run_retrieval_pipeline(args, model, device):
-    import json
-    from tqdm import tqdm
-
-    # 1. Kaydedilmiş Vektörleri Yükle
-    pt_path = os.path.join(args.output_dir, "tum_veri_seti_birlestirilmis.pt")
-    if not os.path.exists(pt_path):
-        logger.error("PT dosyası bulunamadı! Önce --do_save_vector çalıştırın.")
-        return
-
-    logger.info(f"Vektörler yükleniyor: {pt_path}")
-    data = torch.load(pt_path, map_location=device, weights_only=True) # weights_only=True güvenli yükleme için
-    
-    sequence_outputs = data["sequence_output"]
-    visual_outputs = data["visual_output"]
-    input_masks = data["input_mask"]
-    pair_masks = data["pair_mask"]
-    image_filenames = data["image_filenames"]
-    # texts = data["texts"]
-
-    num_samples = sequence_outputs.size(0)
-    logger.info(f"Toplam örnek sayısı: {num_samples}")
-
-    # 2. Kategori Verisini Yükle (Hızlı erişim için Dict'e çeviriyoruz)
-    json_path_catag = args.json_path # '/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged_catag.json'
-    logger.info(f"Kategori dosyası yükleniyor: {json_path_catag}")
-    
-    image_to_category = {}
-    with open(json_path_catag, 'r') as f:
-        json_catag = json.load(f)
-        for img_entry in json_catag.get('images', []):
-            image_to_category[img_entry['filename']] = img_entry['category']
-
-    # 3. Hesaplama ve Kaydetme Döngüsü
-    inference_results = []
-    
-    # Modelin modülüne erişim
-    if hasattr(model, "module"):
-        model = model.module
-    model.eval()
-    model.to(device)
-
-    # Dosyayı sıfırla/oluştur
-    results_file = "inference_results_all.json"
-    with open(results_file, "w", encoding="utf-8") as f:
-        f.write("[\n") # JSON array başlangıcı
-
-    with torch.no_grad():
-        # Her bir sorgu (text) için döngü
-        # batch_size kadar veriyi işleyebiliriz ama CLIP4IDC cross-modal olduğu için 
-        # (1 Text vs N Image) karşılaştırması ağırdır. Basit döngüyle yapıyoruz:
-        
-        for i in tqdm(range(num_samples), desc="Retrieval"):
-            
-            # A. Sorgu (Text) verilerini al
-            query_seq = sequence_outputs[i].unsqueeze(0).to(device) # (1, seq_len, dim)
-            query_mask = input_masks[i].unsqueeze(0).to(device)
-            
-            # B. Tüm Görüntülerle Benzerlik Hesapla
-            # Not: Bellek yetersizliği olursa visual_outputs'u batch'ler halinde vermemiz gerekir.
-            # Şimdilik tümünü gönderiyoruz. Eğer OOM (Out of Memory) hatası alırsan burayı bölmelisin.
-            
-            # CLIP4IDC get_similarity_logits fonksiyonu genelde batch text ile batch image'ı kıyaslar.
-            # Tüm veri setini tek seferde GPU'ya atmak zor olabilir. O yüzden görüntüleri batch'liyoruz.
-            
-            all_logits = []
-            batch_size_sim = 128 # Görüntüleri kaçar kaçar kıyaslayacağımız
-            
-            for j in range(0, num_samples, batch_size_sim):
-                end_j = min(j + batch_size_sim, num_samples)
+                        visual_output = visual_output_raw.repeat_interleave(sentence_num_, dim=0)
+                        pair_mask = pair_mask_raw.repeat_interleave(sentence_num_, dim=0)
+                    except RuntimeError as e:
+                        print(f"\n[HATA] Batch {bid}: Boyut uyuşmazlığı!")
+                        print("Lütfen batch_size_val değerinin 5'in katı olduğundan emin olun.")
+                        raise e
                 
-                vis_batch = visual_outputs[j:end_j].to(device)
-                mask_batch = pair_masks[j:end_j].to(device)
-                
-                # Modelin get_similarity_logits fonksiyonu. 
-                # Model yapısına göre (sequence_output, visual_output, input_mask, pair_mask) bekler.
-                logits, *_ = model.get_similarity_logits(
-                    query_seq, # Bu tekli (broadcast edilecek veya model içinde halledilecek)
-                    vis_batch, 
-                    query_mask, 
-                    mask_batch
+                # Bir sonraki batch için sayacı güncelle
+                total_pair_num += b
+            else:
+                # Multi-sentence değilse (sentence_num=1) düz hesapla
+                visual_output, _ = model.get_visual_output(
+                        image_pair, semantic_pair, image_mask
                 )
-                all_logits.append(logits.cpu()) # Sonuçları CPU'ya al
+                visual_output = visual_output.detach().cpu()
+                pair_mask = image_mask.detach().cpu()
+
+
+            # -----------------------------------------------------------
+            # 3. Kaydetme İşlemi (Güvenli)
+            # -----------------------------------------------------------
+            # Sadece visual_output hesaplandıysa kaydet (Boş geçilen batch olmamalı)
+            # ... (visual_output hesaplandıktan sonra) ...
+
+            # -----------------------------------------------------------
+            # 3. Kaydetme İşlemi (Güvenli Yama)
+            # -----------------------------------------------------------
+            if visual_output is not None:
+                
+                # --- YAMA BAŞLANGICI ---
+                # Eğer Görsel sayısı Metin sayısından fazlaysa (Örn: 135 > 125), fazlalığı kes.
+                if visual_output.shape[0] > sequence_output.shape[0]:
+                    print(f"[BİLGİ] Batch {bid}: Görsel ({visual_output.shape[0]}) > Metin ({sequence_output.shape[0]}). Fazlalık kırpılıyor.")
+                    # Fazlalığı sondan kesiyoruz
+                    visual_output = visual_output[:sequence_output.shape[0]]
+                    pair_mask = pair_mask[:sequence_output.shape[0]] # Maskeyi de kesmeyi unutma
+                
+                # Eğer Metin sayısı Görselden fazlaysa (Eksik resim varsa) -> HATA (Buna yapacak bir şey yok)
+                elif visual_output.shape[0] < sequence_output.shape[0]:
+                     print(f"[KRİTİK HATA] Batch {bid}: Resim eksik! Text: {sequence_output.shape[0]}, Visual: {visual_output.shape[0]}")
+                     # Burada veri kaybı olacağı için durmak en iyisidir
+                     raise ValueError("Resim sayısı yetersiz, veri sırası bozuk.")
+                # --- YAMA BİTİŞİ ---
+
+                batch_data = {
+                    'visual_output': visual_output,
+                    'sequence_output': sequence_output,
+                    'input_mask': input_mask.detach().cpu(),
+                    'segment_ids': segment_ids.detach().cpu(),
+                    'pair_mask': pair_mask
+                }
+                # ...
+
+                # Sıfır dolgulu dosya ismi (Sıralama için önemli: batch_0001.pt)
+                file_name = os.path.join(output_folder, f"batch_{bid:05d}.pt")
+                torch.save(batch_data, file_name)
+
+                # Kullanıcı bilgilendirme
+                if bid % 10 == 0:
+                    print(f"Batch {bid} işlendi ve kaydedildi. (RAM Temizleniyor...)")
             
-            # (1, Num_Samples) boyutunda tüm skorlar
-            full_logits = torch.cat(all_logits, dim=-1).flatten() 
+            else:
+                print(f"[UYARI] Batch {bid} için görsel hesaplanamadı (filter_inds boş). Atlaniyor.")
+
+            # -----------------------------------------------------------
+            # 4. RAM Temizliği (OOM ÇÖZÜMÜ)
+            # -----------------------------------------------------------
+            del sequence_output
+            del visual_output
+            if 'batch_data' in locals(): del batch_data
+            if 'visual_output_raw' in locals(): del visual_output_raw
             
-            # C. Top-K Hesapla (En iyi 3)
-            # Kendisi de listede olacağı için (Training verisi ise), 
-            # Top-4 alıp kendisi mi diye kontrol etmek daha sağlıklı olabilir.
-            # Ancak test verisi ise direkt top 3 alınır.
-            # İsteğin: "En benzer olanın..." dediğin için Top 3 alıyoruz.
+            torch.cuda.empty_cache()
             
-            top_k_scores, top_k_indices = torch.topk(full_logits, k=3)
-            
-            top_indices = top_k_indices.numpy().tolist()
-            top_scores = top_k_scores.numpy().tolist()
-            
-            # D. Kategorileri Bul
-            # Orijinal resmin kategorisi
-            query_img_name = image_filenames[i]
-            og_category = image_to_category.get(query_img_name, -1)
-            
-            found_categories = []
-            for idx in top_indices:
-                found_img_name = image_filenames[idx]
-                cat_id = image_to_category.get(found_img_name, -1)
-                found_categories.append(cat_id)
-            
-            # E. JSON Objesini Oluştur
-            result_entry = {
-                "index": i,
-                "query_image": query_img_name,
-                "rank": -1, # Bunu hesaplamak tüm sort işlemini gerektirir, opsiyonel
-                "confidence": top_scores[0], # En yüksek skor
-                "o_catag": og_category,
-                "f_catag_1": found_categories[0],
-                "f_catag_2": found_categories[1],
-                "f_catag_3": found_categories[2]
-            }
-            
-            # Dosyaya anlık yaz (Liste formatını korumak için virgül ekle)
-            with open(results_file, "a", encoding="utf-8") as f:
-                json.dump(result_entry, f, indent=4)
-                if i < num_samples - 1:
-                    f.write(",\n")
-                else:
-                    f.write("\n")
+    print("\n✅ İşlem Tamamlandı! Tüm batchler 'batch_kayitlari' klasörüne kaydedildi.")
+    print("Şimdi 'accumulate_vector_safe' fonksiyonu ile bunları birleştirebilirsiniz.")
+    return 0
+
+import json
+
+class VeriSetiOkuyucu:
+    def __init__(self, tensor_path, json_path, split='test'):
+        print("Veriler yükleniyor, lütfen bekleyin...")
         
-    with open(results_file, "a", encoding="utf-8") as f:
-        f.write("]") # JSON array bitişi
+        # 1. Matematiksel Veriyi (Tensors) Yükle
+        # (CPU'ya map ederek yüklüyoruz ki GPU dolmasın)
 
-    logger.info(f"✅ Çıkarım tamamlandı. Sonuçlar: {results_file}")
+        self.tensors_data = torch.load(tensor_path, map_location=torch.device('cpu'), mmap=True)
 
+        self.visual_output = self.tensors_data['visual_output']
+        self.input_mask = self.tensors_data['input_mask']
+        self.sequence_output = self.tensors_data['sequence_output']
+        self.segment_ids = self.tensors_data['segment_ids']
+        self.pair_mask = self.tensors_data['pair_mask']
+        
+        # 2. Ham Metin Verisini (JSON) Yükle
+        with open(json_path, 'r') as f:
+            full_json = json.load(f)
+            
+        # 3. Sadece 'test' kısmını filtrele ve Düzleştir (Flatten)
+        # Modelin 6121 satırlık çıktı verdiği için JSON'u da ona benzetmeliyiz.
+        self.metadata_list = []
+        
+        for img_item in full_json['images']:
+            if img_item['split'] == split:
+                img_filename = img_item['filename']
+                img_id = img_item['imgid']
+                
+                # Her resmin içindeki cümleleri tek tek listeye ekle
+                for sent in img_item['sentences']:
+                    self.metadata_list.append({
+                        'image_filename': img_filename,
+                        'image_id': img_id,
+                        'raw_text': sent['raw'],
+                        'tokens': sent['tokens']
+                    })
+        
+        # Güvenlik Kontrolü
+        print(f"Tensor Satır Sayısı: {len(self.sequence_output)}")
+        print(f"Metin Satır Sayısı:  {len(self.metadata_list)}")
+        
+        if len(self.sequence_output) != len(self.metadata_list):
+            print("UYARI: Tensor ve Metin sayıları uyuşmuyor! Veri setinde eksik cümleler olabilir.")
+
+    def get_item(self, index):
+        """İstenilen sıradaki verinin hem metnini hem tensörünü getirir."""
+        if index >= len(self.metadata_list):
+            return "Hata: Geçersiz indeks!"
+            
+        meta = self.metadata_list[index]
+
+        visual_output = self.visual_output[index]
+        segment_ids = self.segment_ids[index]
+        input_mask = self.input_mask[index]
+        sequence_output = self.sequence_output[index]
+        pair_mask = self.pair_mask[index]
+
+        
+        return {
+            'text': meta['raw_text'],
+            'image_file': meta['image_filename'],
+
+            'visual_output': visual_output,  
+            'input_mask': input_mask,
+            'segment_ids': segment_ids,
+            'sequence_output': sequence_output,
+            'pair_mask': pair_mask
+        }
+
+def accumulate_vector():
+    import glob
+
+    # Kayıtlı tüm dosyaları bul (Sıralı olması için sort kullanıyoruz)
+    files = sorted(glob.glob(os.path.join("batch_kayitlari", "*.pt")))
+
+    all_visual_output = []
+    all_input_mask = []
+    all_segment_ids = []
+    all_sequence_output= []
+    all_pair_mask = []
+
+    print("Dosyalar okunuyor ve birleştiriliyor...")
+
+    for file_path in files:
+        # 1. Dosyayı yükle
+        data = torch.load(file_path)
+        
+        # 2. Listelere ekle
+        all_visual_output.append(data['visual_output'])
+        all_input_mask.append(data['input_mask'])
+        all_segment_ids.append(data['segment_ids'])
+        all_sequence_output.append(data['sequence_output'])
+        all_pair_mask.append(data['pair_mask'])
+
+    # 3. Hepsini tek bir büyük Tensör yap (Concatenate)
+    final_visual_output = torch.cat(all_visual_output, dim=0)
+    final_input_mask = torch.cat(all_input_mask, dim=0)
+    final_segment_ids = torch.cat(all_segment_ids, dim=0)
+    final_sequence_output = torch.cat(all_sequence_output, dim=0)
+    final_pair_mask = torch.cat(all_pair_mask, dim=0)
+
+    # Güvenlik Kontrolü
+    print(f"metin Satır Sayısı: {len(all_sequence_output)}")
+    print(f"görsel Satır Sayısı:  {len(all_visual_output)}")
+    
+    if len(all_sequence_output) != len(all_visual_output):
+        print("UYARI: Tensor ve Metin sayıları uyuşmuyor! Veri setinde eksik cümleler olabilir.")
+
+    
+
+    print("BİRLEŞTİRME TAMAMLANDI!")
+    print(f"Final Embedding Boyutu: {final_sequence_output.shape}")
+    # Örn Çıktı: (6121, 77, 512)
+
+    # İstersen bu BÜYÜK birleşmiş halini de tek dosya olarak saklayabilirsin
+    torch.save({
+        'visual_output': final_visual_output.detach().cpu(),
+        'input_mask': final_input_mask.detach().cpu(),
+        'segment_ids': final_segment_ids.detach().cpu(),
+        'sequence_output': final_sequence_output.detach().cpu(),
+        'pair_mask': final_pair_mask.detach().cpu()
+    }, "tum_veri_seti_birlestirilmis.pt")
 
 def main():
     global logger
@@ -1209,26 +1270,29 @@ def main():
         eval_epoch(args, model, test_dataloader, device)
 
     elif args.do_save_vector:
-        # Hangi dataloader kullanılacaksa
-        if args.dataloader_type == "train1":
-             subset_name = "train1"
-             dl_func = DATALOADER_DICT[args.datatype]["train1"]
-        else:
-             subset_name = args.dataloader_type
-             dl_func = DATALOADER_DICT[args.datatype][args.dataloader_type]
-
-        if dl_func is not None:
-             dataloader, length = dl_func(args, tokenizer, subset=subset_name if subset_name=="train1" else "test")
-             logger.info(f"Dataloader yüklendi: {length} örnek.")
-             
-             # 1. Adım: Kaydetme
-             eval_epoch_save(args, model, dataloader, device)
-        else:
-            logger.error("Dataloader bulunamadı!")
+        eval_epoch_save(args, model, test_dataloader, device)
+        accumulate_vector()
 
     elif args.do_retrieval:
         # --- KULLANIM ---
 
+        # Dosya yollarını kendine göre düzenle
+        if(args.dataloader_type == "train1"):
+            split = "train"
+        else:
+            split = args.dataloader_type
+        # Dosya yollarını kendine göre düzenle
+        okuyucu = VeriSetiOkuyucu(
+            tensor_path='tum_veri_seti_birlestirilmis.pt', 
+            json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json',
+            split = split
+        )
+        # ÖRNEK 1: 50. sıradaki veriyi çekelim
+        veri = okuyucu.get_item(args.index_retrieval)
+        print("\n--- "+str(args.index_retrieval)+". Kayıt Bilgisi ---")
+        print(f"Resim Adı: {veri['image_file']}")
+        print(f"Cümle:     {veri['text']}")
+        print(f"sequence_output: {veri['sequence_output'].shape}")
         randomList = [
             421, 15, 387, 502, 99, 234, 11, 456, 32, 527, 
             176, 289, 44, 510, 8, 365, 123, 499, 67, 250, 
