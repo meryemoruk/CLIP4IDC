@@ -902,137 +902,132 @@ def eval_epoch_save(args, model, test_dataloader, device):
     logger.info(f"✅ Tüm vektörler kaydedildi: {output_path}")
     logger.info(f"Toplam Veri Sayısı: {len(all_image_filenames)}")
 
-def run_retrieval_pipeline(args, model, device):
-    import json
-    import os  # <--- DÜZELTME: os modülü gerekli
-    from tqdm import tqdm
-
-    # 1. Kaydedilmiş Vektörleri Yükle
-    pt_path = os.path.join(args.output_dir, "tum_veri_seti_birlestirilmis.pt")
-    if not os.path.exists(pt_path):
-        logger.error("PT dosyası bulunamadı! Önce --do_save_vector çalıştırın.")
-        return
-
-    logger.info(f"Vektörler yükleniyor: {pt_path}")
-    data = torch.load(pt_path, map_location=device, weights_only=True)
-    
-    sequence_outputs = data["sequence_output"]
-    visual_outputs = data["visual_output"]
-    input_masks = data["input_mask"]
-    pair_masks = data["pair_mask"]
-    image_filenames = data["image_filenames"]
-
-    num_samples = sequence_outputs.size(0)
-    logger.info(f"Toplam örnek sayısı: {num_samples}")
-
-    # 2. Kategori Verisini Yükle
-    json_path_catag = args.json_path 
-    logger.info(f"Kategori dosyası yükleniyor: {json_path_catag}")
-    
-    image_to_category = {}
-    with open(json_path_catag, 'r') as f:
-        json_catag = json.load(f)
-        for img_entry in json_catag.get('images', []):
-            # JSON'daki filename'in de temiz olduğundan emin olalım
-            clean_json_name = os.path.basename(img_entry['filename']) 
-            image_to_category[clean_json_name] = img_entry['category']
-
-    # DEBUG: Hatanın sebebini görmek için ilk kaydı ekrana basıyoruz
-    if len(image_filenames) > 0:
-        ornek_pt_ismi = image_filenames[0]
-        ornek_pt_ismi_temiz = os.path.basename(ornek_pt_ismi)
-        logger.info(f"DEBUG KONTROL:")
-        logger.info(f"PT dosyasındaki ham isim: '{ornek_pt_ismi}'")
-        logger.info(f"Temizlenmiş isim: '{ornek_pt_ismi_temiz}'")
-        logger.info(f"JSON'da bu isim var mı?: {ornek_pt_ismi_temiz in image_to_category}")
-        if ornek_pt_ismi_temiz in image_to_category:
-            logger.info(f"Kategorisi: {image_to_category[ornek_pt_ismi_temiz]}")
-        else:
-            logger.info("JSON anahtarlarından ilk 5 tanesi:")
-            logger.info(list(image_to_category.keys())[:5])
-
-    # 3. Hesaplama ve Kaydetme Döngüsü
-    inference_results = []
-    
+def eval_epoch_save(args, model, test_dataloader, device):
+    """
+    Modelden sequence ve visual outputları çıkarır ve bir .pt dosyasına kaydeder.
+    GÜNCELLENMİŞ VERSİYON: Dosya isimlerini daha agresif bir şekilde bulur.
+    """
     if hasattr(model, "module"):
-        model = model.module
-    model.eval()
-    model.to(device)
+        model = model.module.to(device)
+    else:
+        model = model.to(device)
 
-    results_file = "inference_results_all.json"
-    with open(results_file, "w", encoding="utf-8") as f:
-        f.write("[\n") 
+    model.eval()
+
+    all_sequence_outputs = []
+    all_visual_outputs = []
+    all_input_masks = []
+    all_pair_masks = [] 
+    all_image_filenames = []
+    all_segment_ids = []
+
+    logger.info("Veri seti vektörleri çıkarılıyor...")
+
+    # Dataset'in iç yapısını anlamak için ilk elemana bakalım (DEBUG)
+    try:
+        logger.info(f"Dataset Tipi: {type(test_dataloader.dataset)}")
+        logger.info(f"Dataset Örnek Veri Keys: {test_dataloader.dataset[0].keys() if isinstance(test_dataloader.dataset[0], dict) else 'Dict değil'}")
+    except Exception as e:
+        logger.info(f"Dataset debug hatası: {e}")
 
     with torch.no_grad():
-        for i in tqdm(range(num_samples), desc="Retrieval"):
-            
-            query_seq = sequence_outputs[i].unsqueeze(0).to(device)
-            query_mask = input_masks[i].unsqueeze(0).to(device)
-            
-            all_logits = []
-            batch_size_sim = 128 
-            
-            for j in range(0, num_samples, batch_size_sim):
-                end_j = min(j + batch_size_sim, num_samples)
-                vis_batch = visual_outputs[j:end_j].to(device)
-                mask_batch = pair_masks[j:end_j].to(device)
-                
-                logits, *_ = model.get_similarity_logits(
-                    query_seq, 
-                    vis_batch, 
-                    query_mask, 
-                    mask_batch
-                )
-                all_logits.append(logits.cpu()) 
-            
-            full_logits = torch.cat(all_logits, dim=-1).flatten() 
-            
-            top_k_scores, top_k_indices = torch.topk(full_logits, k=3)
-            
-            top_indices = top_k_indices.numpy().tolist()
-            top_scores = top_k_scores.numpy().tolist()
-            
-            # --- DÜZELTME BURADA BAŞLIYOR ---
-            
-            # 1. Sorgu resminin ismini temizle (Path'i at)
-            query_img_raw = image_filenames[i]
-            query_img_clean = os.path.basename(query_img_raw)
-            
-            og_category = image_to_category.get(query_img_clean, -1)
-            
-            found_categories = []
-            for idx in top_indices:
-                # 2. Bulunan resimlerin isimlerini temizle
-                found_img_raw = image_filenames[idx]
-                found_img_clean = os.path.basename(found_img_raw)
-                
-                cat_id = image_to_category.get(found_img_clean, -1)
-                found_categories.append(cat_id)
+        for bid, batch in enumerate(test_dataloader):
+            batch = tuple(t.to(device) for t in batch)
+            (
+                input_ids,
+                input_mask,
+                segment_ids,
+                bef_image,
+                aft_image,
+                bef_semantic,
+                aft_semantic,
+                image_mask,
+            ) = batch
 
-            # --- DÜZELTME BURADA BİTİYOR ---
-            
-            result_entry = {
-                "index": i,
-                "query_image": query_img_clean, # Temiz ismi kaydetmek daha okunaklı olur
-                "rank": -1, 
-                "confidence": top_scores[0], 
-                "o_catag": og_category,
-                "f_catag_1": found_categories[0],
-                "f_catag_2": found_categories[1],
-                "f_catag_3": found_categories[2]
-            }
-            
-            with open(results_file, "a", encoding="utf-8") as f:
-                json.dump(result_entry, f, indent=4)
-                if i < num_samples - 1:
-                    f.write(",\n")
-                else:
-                    f.write("\n")
-        
-    with open(results_file, "a", encoding="utf-8") as f:
-        f.write("]") 
+            # 1. Feature Çıkarma
+            sequence_output, _ = model.get_sequence_output(
+                input_ids,
+                segment_ids,
+                input_mask,
+            )
 
-    logger.info(f"✅ Çıkarım tamamlandı. Sonuçlar: {results_file}")
+            image_pair = torch.cat([bef_image, aft_image], 1)
+            semantic_pair = torch.cat([bef_semantic, aft_semantic], 1)
+            
+            visual_output, _ = model.get_visual_output(
+                image_pair,
+                semantic_pair,
+                image_mask,
+            )
+
+            # 2. CPU'ya taşıma
+            all_sequence_outputs.append(sequence_output.cpu())
+            all_visual_outputs.append(visual_output.cpu())
+            all_input_masks.append(input_mask.cpu())
+            all_pair_masks.append(image_mask.cpu())
+            all_segment_ids.append(segment_ids.cpu())
+
+            # 3. DOSYA İSİMLERİNİ ALMA (Düzeltilen Kısım)
+            # Batch içindeki her bir örnek için global indeksi buluyoruz
+            current_batch_size = input_ids.size(0)
+            start_idx = bid * args.batch_size_val
+            
+            for i in range(current_batch_size):
+                global_idx = start_idx + i
+                filename = "unknown.jpg" # Varsayılan
+                
+                # YÖNTEM 1: Dataset'in içinde 'data' listesi varsa (En yaygın yöntem)
+                if hasattr(test_dataloader.dataset, 'data'):
+                    try:
+                        item = test_dataloader.dataset.data[global_idx]
+                        if isinstance(item, dict):
+                            # 'image_file', 'image_path', 'filename' gibi keyleri dener
+                            filename = item.get('image_file', item.get('filename', item.get('image', 'unknown.jpg')))
+                    except:
+                        pass
+                
+                # YÖNTEM 2: Dataset'in kendisi bir liste ise veya __getitem__ dict dönüyorsa
+                if filename == "unknown.jpg":
+                    try:
+                        # DİKKAT: __getitem__ bazen tensor döndürür (collate_fn yüzünden), 
+                        # ama bazen raw dict döndürür. Şansımızı deniyoruz.
+                        # Eğer transform uygulanıyorsa bu yöntem yavaş olabilir ama çalışır.
+                        raw_data = test_dataloader.dataset[global_idx]
+                        if isinstance(raw_data, dict):
+                             filename = raw_data.get('image_file', raw_data.get('filename', 'unknown.jpg'))
+                    except:
+                        pass
+
+                # YÖNTEM 3: Dataset'in içinde 'image_list' varsa
+                if filename == "unknown.jpg" and hasattr(test_dataloader.dataset, 'image_list'):
+                    try:
+                        filename = test_dataloader.dataset.image_list[global_idx]
+                    except:
+                        pass
+
+                # Temizlik: Eğer tam yol (path) geldiyse sadece ismi al
+                import os
+                filename = os.path.basename(str(filename))
+                
+                all_image_filenames.append(filename)
+
+            if bid % 10 == 0:
+                logger.info(f"Batch {bid}/{len(test_dataloader)} işlendi. Son dosya: {all_image_filenames[-1]}")
+
+    # Kaydetme
+    save_data = {
+        "sequence_output": torch.cat(all_sequence_outputs, dim=0),
+        "visual_output": torch.cat(all_visual_outputs, dim=0),
+        "input_mask": torch.cat(all_input_masks, dim=0),
+        "pair_mask": torch.cat(all_pair_masks, dim=0),
+        "segment_ids": torch.cat(all_segment_ids, dim=0),
+        "image_filenames": all_image_filenames
+    }
+
+    output_path = os.path.join(args.output_dir, "tum_veri_seti_birlestirilmis.pt")
+    torch.save(save_data, output_path)
+    logger.info(f"✅ Vektörler yeniden kaydedildi. Toplam: {len(all_image_filenames)}")
+    logger.info(f"Örnek dosya isimleri: {all_image_filenames[:5]}")
 
 
 def main():
