@@ -904,6 +904,7 @@ def eval_epoch_save(args, model, test_dataloader, device):
 
 def run_retrieval_pipeline(args, model, device):
     import json
+    import os  # <--- DÜZELTME: os modülü gerekli
     from tqdm import tqdm
 
     # 1. Kaydedilmiş Vektörleri Yükle
@@ -913,117 +914,114 @@ def run_retrieval_pipeline(args, model, device):
         return
 
     logger.info(f"Vektörler yükleniyor: {pt_path}")
-    data = torch.load(pt_path, map_location=device, weights_only=True) # weights_only=True güvenli yükleme için
+    data = torch.load(pt_path, map_location=device, weights_only=True)
     
     sequence_outputs = data["sequence_output"]
     visual_outputs = data["visual_output"]
     input_masks = data["input_mask"]
     pair_masks = data["pair_mask"]
     image_filenames = data["image_filenames"]
-    # texts = data["texts"]
 
     num_samples = sequence_outputs.size(0)
     logger.info(f"Toplam örnek sayısı: {num_samples}")
 
-    # 2. Kategori Verisini Yükle (Hızlı erişim için Dict'e çeviriyoruz)
-    json_path_catag = args.json_path # '/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged_catag.json'
+    # 2. Kategori Verisini Yükle
+    json_path_catag = args.json_path 
     logger.info(f"Kategori dosyası yükleniyor: {json_path_catag}")
     
     image_to_category = {}
     with open(json_path_catag, 'r') as f:
         json_catag = json.load(f)
         for img_entry in json_catag.get('images', []):
-            image_to_category[img_entry['filename']] = img_entry['category']
+            # JSON'daki filename'in de temiz olduğundan emin olalım
+            clean_json_name = os.path.basename(img_entry['filename']) 
+            image_to_category[clean_json_name] = img_entry['category']
+
+    # DEBUG: Hatanın sebebini görmek için ilk kaydı ekrana basıyoruz
+    if len(image_filenames) > 0:
+        ornek_pt_ismi = image_filenames[0]
+        ornek_pt_ismi_temiz = os.path.basename(ornek_pt_ismi)
+        logger.info(f"DEBUG KONTROL:")
+        logger.info(f"PT dosyasındaki ham isim: '{ornek_pt_ismi}'")
+        logger.info(f"Temizlenmiş isim: '{ornek_pt_ismi_temiz}'")
+        logger.info(f"JSON'da bu isim var mı?: {ornek_pt_ismi_temiz in image_to_category}")
+        if ornek_pt_ismi_temiz in image_to_category:
+            logger.info(f"Kategorisi: {image_to_category[ornek_pt_ismi_temiz]}")
+        else:
+            logger.info("JSON anahtarlarından ilk 5 tanesi:")
+            logger.info(list(image_to_category.keys())[:5])
 
     # 3. Hesaplama ve Kaydetme Döngüsü
     inference_results = []
     
-    # Modelin modülüne erişim
     if hasattr(model, "module"):
         model = model.module
     model.eval()
     model.to(device)
 
-    # Dosyayı sıfırla/oluştur
     results_file = "inference_results_all.json"
     with open(results_file, "w", encoding="utf-8") as f:
-        f.write("[\n") # JSON array başlangıcı
+        f.write("[\n") 
 
     with torch.no_grad():
-        # Her bir sorgu (text) için döngü
-        # batch_size kadar veriyi işleyebiliriz ama CLIP4IDC cross-modal olduğu için 
-        # (1 Text vs N Image) karşılaştırması ağırdır. Basit döngüyle yapıyoruz:
-        
         for i in tqdm(range(num_samples), desc="Retrieval"):
             
-            # A. Sorgu (Text) verilerini al
-            query_seq = sequence_outputs[i].unsqueeze(0).to(device) # (1, seq_len, dim)
+            query_seq = sequence_outputs[i].unsqueeze(0).to(device)
             query_mask = input_masks[i].unsqueeze(0).to(device)
             
-            # B. Tüm Görüntülerle Benzerlik Hesapla
-            # Not: Bellek yetersizliği olursa visual_outputs'u batch'ler halinde vermemiz gerekir.
-            # Şimdilik tümünü gönderiyoruz. Eğer OOM (Out of Memory) hatası alırsan burayı bölmelisin.
-            
-            # CLIP4IDC get_similarity_logits fonksiyonu genelde batch text ile batch image'ı kıyaslar.
-            # Tüm veri setini tek seferde GPU'ya atmak zor olabilir. O yüzden görüntüleri batch'liyoruz.
-            
             all_logits = []
-            batch_size_sim = 128 # Görüntüleri kaçar kaçar kıyaslayacağımız
+            batch_size_sim = 128 
             
             for j in range(0, num_samples, batch_size_sim):
                 end_j = min(j + batch_size_sim, num_samples)
-                
                 vis_batch = visual_outputs[j:end_j].to(device)
                 mask_batch = pair_masks[j:end_j].to(device)
                 
-                # Modelin get_similarity_logits fonksiyonu. 
-                # Model yapısına göre (sequence_output, visual_output, input_mask, pair_mask) bekler.
                 logits, *_ = model.get_similarity_logits(
-                    query_seq, # Bu tekli (broadcast edilecek veya model içinde halledilecek)
+                    query_seq, 
                     vis_batch, 
                     query_mask, 
                     mask_batch
                 )
-                all_logits.append(logits.cpu()) # Sonuçları CPU'ya al
+                all_logits.append(logits.cpu()) 
             
-            # (1, Num_Samples) boyutunda tüm skorlar
             full_logits = torch.cat(all_logits, dim=-1).flatten() 
-            
-            # C. Top-K Hesapla (En iyi 3)
-            # Kendisi de listede olacağı için (Training verisi ise), 
-            # Top-4 alıp kendisi mi diye kontrol etmek daha sağlıklı olabilir.
-            # Ancak test verisi ise direkt top 3 alınır.
-            # İsteğin: "En benzer olanın..." dediğin için Top 3 alıyoruz.
             
             top_k_scores, top_k_indices = torch.topk(full_logits, k=3)
             
             top_indices = top_k_indices.numpy().tolist()
             top_scores = top_k_scores.numpy().tolist()
             
-            # D. Kategorileri Bul
-            # Orijinal resmin kategorisi
-            query_img_name = image_filenames[i]
-            og_category = image_to_category.get(query_img_name, -1)
+            # --- DÜZELTME BURADA BAŞLIYOR ---
+            
+            # 1. Sorgu resminin ismini temizle (Path'i at)
+            query_img_raw = image_filenames[i]
+            query_img_clean = os.path.basename(query_img_raw)
+            
+            og_category = image_to_category.get(query_img_clean, -1)
             
             found_categories = []
             for idx in top_indices:
-                found_img_name = image_filenames[idx]
-                cat_id = image_to_category.get(found_img_name, -1)
+                # 2. Bulunan resimlerin isimlerini temizle
+                found_img_raw = image_filenames[idx]
+                found_img_clean = os.path.basename(found_img_raw)
+                
+                cat_id = image_to_category.get(found_img_clean, -1)
                 found_categories.append(cat_id)
+
+            # --- DÜZELTME BURADA BİTİYOR ---
             
-            # E. JSON Objesini Oluştur
             result_entry = {
                 "index": i,
-                "query_image": query_img_name,
-                "rank": -1, # Bunu hesaplamak tüm sort işlemini gerektirir, opsiyonel
-                "confidence": top_scores[0], # En yüksek skor
+                "query_image": query_img_clean, # Temiz ismi kaydetmek daha okunaklı olur
+                "rank": -1, 
+                "confidence": top_scores[0], 
                 "o_catag": og_category,
                 "f_catag_1": found_categories[0],
                 "f_catag_2": found_categories[1],
                 "f_catag_3": found_categories[2]
             }
             
-            # Dosyaya anlık yaz (Liste formatını korumak için virgül ekle)
             with open(results_file, "a", encoding="utf-8") as f:
                 json.dump(result_entry, f, indent=4)
                 if i < num_samples - 1:
@@ -1032,7 +1030,7 @@ def run_retrieval_pipeline(args, model, device):
                     f.write("\n")
         
     with open(results_file, "a", encoding="utf-8") as f:
-        f.write("]") # JSON array bitişi
+        f.write("]") 
 
     logger.info(f"✅ Çıkarım tamamlandı. Sonuçlar: {results_file}")
 
