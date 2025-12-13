@@ -710,6 +710,19 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
+    def encode_image(self, image, return_hidden=False, video_frame=-1):
+        hidden = self.visual(image.type(self.dtype), video_frame=video_frame)
+        hidden = self.visual.ln_post(hidden) @ self.visual.proj
+
+        x = torch.cat([hidden[:, 0, :].unsqueeze(1), hidden[:, 50, :].unsqueeze(1)], 1)
+        x = torch.mean(x, 1)
+        # x = hidden[:, 0, :]
+
+        if return_hidden:
+            return x, hidden
+
+        return x
+
     def encode_image_and_semantic_map(self, image_pair, semantic_pair, return_hidden=False, video_frame=-1):
         image_hidden = self.visual(image_pair.type(self.dtype), video_frame=video_frame)
         image_features_pooled = self.visual.ln_post(image_hidden) @ self.visual.proj
@@ -761,11 +774,16 @@ class CLIP(nn.Module):
         return x
 
     def forward(self, image, semantic_map, text):
-        image_features = self.encode_image_and_semantic_map(image, semantic_map)
+        image_features_rgb = self.encode_image(image)
+        image_features_sem = self.encode_image(semantic_map)
         text_features = self.encode_text(text)
 
         # normalized features
-        image_features = image_features / image_features.norm(
+        image_features_rgb = image_features_rgb / image_features_rgb.norm(
+            dim=-1,
+            keepdim=True,
+        )
+        image_features_sem = image_features_sem / image_features_sem.norm(
             dim=-1,
             keepdim=True,
         )
@@ -775,12 +793,16 @@ class CLIP(nn.Module):
         )
 
         # cosine similarity as logits
-        logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        logits_per_text = logit_scale * text_features @ image_features.t()
+        logit_scale_text = self.logit_scale.exp()
+        logits_text_per_image = logit_scale_text * image_features_rgb @ text_features.t()
+        logits_text_per_text = logit_scale_text * text_features @ image_features_rgb.t()# cosine similarity as logits
+        
+        logit_scale_sem = self.logit_scale.exp()
+        logits_sem_per_image = logit_scale_sem * image_features_rgb @ image_features_sem.t()
+        logits_sem_per_sem = logit_scale_sem * image_features_sem @ image_features_rgb.t()
 
         # shape = [global_batch_size, global_batch_size]
-        return logits_per_image, logits_per_text
+        return logits_text_per_image, logits_text_per_text, logits_sem_per_image, logits_sem_per_sem
 
 
 def convert_weights(model: nn.Module):
