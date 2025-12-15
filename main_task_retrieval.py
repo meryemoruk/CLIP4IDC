@@ -56,6 +56,7 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--dataloader_type", type=str, default="test")
 
     parser.add_argument("--index_retrieval", type=int, default=20)
+    parser.add_argument("--heatmap_count", type=int, default=200)
 
 
     parser.add_argument("--data_path", type=str, default="data/datatype", help="data file path")
@@ -1262,7 +1263,7 @@ def main():
         ]
         randomList = [594, 815, 777, 566, 363, 470, 744, 311, 538, 578, 831, 470, 5, 709, 541, 509, 725, 13, 652, 143, 808, 11, 51, 644, 61, 662, 789, 356, 55, 447, 686, 181, 247, 780, 304, 797, 64, 479, 87, 61, 770, 325, 591, 182, 174, 691, 761, 99, 252, 450, 222, 464, 160, 318, 553, 544, 55, 396, 724, 467, 138, 831, 519, 291, 425, 606, 470, 2, 608, 743, 49, 660, 72, 551, 39, 612, 101, 109, 223, 442, 111, 292, 117, 533, 303, 407, 450, 222, 548, 356, 822, 252, 618, 837, 772, 126, 66, 693, 644, 580]
         # 0 ile 5950 arasında (ikisi de dahil), 1000 adet sayı üretir
-        randomList = [random.randint(0, 5950) for _ in range(1000)]
+        randomList = [random.randint(0, 5950) for _ in range(args.heatmap_count)]
         a = 1
         import json
         inference_result = {"list" : []}
