@@ -383,7 +383,7 @@ def train_epoch(
             #logger.warning("<"*10+"inferencing")
 
             # Forward işleminden 4 çıktı al
-            logits_img_txt, logits_txt_img, logits_img_sem, logits_sem_img = model(
+            loss = model(
                 input_ids,
                 segment_ids,
                 input_mask,
@@ -394,21 +394,9 @@ def train_epoch(
                 image_mask,
             )
 
-            # 1. Metin için Loss Hesapla (CLIP Loss)
-            loss_text = (model.loss_fct(logits_img_txt) + model.loss_fct(logits_txt_img)) / 2
-
-            # 2. Semantik Harita için Loss Hesapla
-            loss_sem = (model.loss_fct(logits_img_sem) + model.loss_fct(logits_sem_img)) / 2
-
-            # 3. İKİ LOSS'U TOPLA (Model ikisini de ayrı ayrı optimize etsin)
-            total_loss_back = loss_text + loss_sem
-
-            #logger.warning("<"*10+"inferenced")
-            #logger.warning("<"*10+str(loss))
-
 
             if args.gradient_accumulation_steps > 1:
-                total_loss_back = total_loss_back / args.gradient_accumulation_steps
+                loss = loss / args.gradient_accumulation_steps
 
             for name, param in model.named_parameters():
                 if param.grad is not None:
@@ -416,11 +404,11 @@ def train_epoch(
                         logger.info(f"HATA: {name} gradyanında NaN veya Inf bulundu!")
 
 
-            total_loss_back.backward()
+            loss.backward()
 
-            #logger.warning("total_loss_back backward ")
+            #logger.warning("loss backward ")
 
-            total_loss += float(total_loss_back)
+            total_loss += float(loss)
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
@@ -443,7 +431,7 @@ def train_epoch(
                 logger.info("Epoch: %d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f", epoch + 1,
                             args.epochs, step + 1,
                             len(train_dataloader), "-".join([str('%.9f'%itm) for itm in sorted(list(set(optimizer.get_lr())))]),
-                            float(total_loss_back),
+                            float(loss),
                             (time.time() - start_time) / (log_step * args.gradient_accumulation_steps))
                 start_time = time.time()
 

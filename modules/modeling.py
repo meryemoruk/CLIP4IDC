@@ -360,7 +360,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
                 )
                 loss += decoder_loss
 
-            return sim_matrix_text, sim_matrix_text.T, sim_matrix_sem, sim_matrix_sem.T
+            return loss
         else:
             return None
 
