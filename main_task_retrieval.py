@@ -694,7 +694,7 @@ def eval_epoch(args, model, test_dataloader, device):
                         semantic_pair[filter_inds, ...],
                         image_mask[filter_inds, ...],
                     )
-                    visual_output, _ = model.get_visual_output(
+                    visual_output = model.get_visual_output(
                         image_pair,
                         semantic_pair,
                         pair_mask,
