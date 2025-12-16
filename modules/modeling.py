@@ -523,7 +523,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
 
         sequence_output = sequence_output.squeeze(1)
         sequence_output = sequence_output / sequence_output.norm(dim=-1, keepdim=True)
-
+        sequence_output.float()
         logit_scale = self.clip.logit_scale.exp()
         retrieve_logits = logit_scale * torch.matmul(sequence_output, visual_output.t())
         return retrieve_logits
