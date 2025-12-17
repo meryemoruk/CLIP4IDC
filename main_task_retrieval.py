@@ -457,7 +457,7 @@ def _run_on_single_gpu(
     write_debug("batch run on singledaki", batch_list_s, False)
     write_debug("batch_sequence_output_list", batch_sem_output_list, False)
     for idx1, b1 in enumerate(batch_list_s):
-        input_mask, segment_ids, *_tmp = b1
+        input_mask, *_tmp = b1
         sequence_output = batch_sem_output_list[idx1]
         each_row = []
         for idx2, b2 in enumerate(batch_list_v):
