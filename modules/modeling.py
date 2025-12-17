@@ -315,7 +315,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             input_caption_ids = input_caption_ids.view(-1, input_caption_ids.shape[-1])
             decoder_mask = decoder_mask.view(-1, decoder_mask.shape[-1])
 
-        sequence_emb, visual_emb, sequence_output, visual_output = self.get_sequence_and_visual_output(
+        sem_emb, visual_emb, sem_output, visual_output = self.get_sem_and_visual_output(
             input_ids,
             token_type_ids,
             attention_mask,
@@ -331,7 +331,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
 
             if self._stage_one is True and self._stage_two is False:
                 sim_matrix, *_tmp = self.get_similarity_logits(
-                    sequence_emb, visual_emb, attention_mask, image_mask, shaped=True
+                    sem_emb, visual_emb, attention_mask, image_mask, shaped=True
                 )
                 sim_loss1 = self.loss_fct(sim_matrix)
                 sim_loss2 = self.loss_fct(sim_matrix.T)
@@ -357,21 +357,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         else:
             return None
 
-    def get_sequence_output(self, input_ids, token_type_ids, attention_mask, shaped=False):
-        if shaped is False:
-            input_ids = input_ids.view(-1, input_ids.shape[-1])
-            token_type_ids = token_type_ids.view(-1, token_type_ids.shape[-1])
-            attention_mask = attention_mask.view(-1, attention_mask.shape[-1])
-
-        bs_pair = input_ids.size(0)
-        sequence_output, sequence_hidden = self.clip.encode_text(input_ids, return_hidden=True)
-        sequence_hidden = sequence_hidden.float()
-        sequence_output = sequence_output.float()
-        sequence_hidden = sequence_hidden.view(bs_pair, -1, sequence_hidden.size(-1))
-
-        return sequence_output, sequence_hidden
-
-    def get_visual_output(self, image_pair, semantic_pair, visual_mask, shaped=False, video_frame=-1):
+    def get_visual_output(self, image_pair, visual_mask, shaped=False, video_frame=-1):
         if shaped is False:
             visual_mask = visual_mask.view(-1, visual_mask.shape[-1])
             image_pair = torch.as_tensor(image_pair).float()
@@ -379,16 +365,32 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             image_pair = image_pair.view(b * pair, channel, h, w)
             video_frame = pair
 
+        bs_pair = visual_mask.size(0)
+        visual_output, visual_hidden = self.clip.encode_image(
+            image_pair,
+            video_frame=video_frame,
+            return_hidden=True
+        )
+        visual_hidden = visual_hidden.float()
+        visual_output = visual_output.float()
+        visual_hidden = visual_hidden.view(bs_pair, -1, visual_hidden.size(-1))
+
+        return visual_output, visual_hidden
+    
+    def get_sem_output(self, semantic_pair, visual_mask, shaped=False, video_frame=-1):
+        if shaped is False:
+            visual_mask = visual_mask.view(-1, visual_mask.shape[-1])
+            video_frame = pair
+
             semantic_pair = torch.as_tensor(semantic_pair).float()
             b, pair, channel, h, w = semantic_pair.shape
             semantic_pair = semantic_pair.view(b * pair, channel, h, w)
 
         bs_pair = visual_mask.size(0)
-        visual_output, visual_hidden = self.clip.encode_image_and_semantic_map(
-            image_pair,
+        visual_output, visual_hidden = self.clip.encode_image_sem(
             semantic_pair,
             video_frame=video_frame,
-            return_hidden=True,
+            return_hidden=True
         )
         visual_hidden = visual_hidden.float()
         visual_output = visual_output.float()
@@ -396,7 +398,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
 
         return visual_output, visual_hidden
 
-    def get_sequence_and_visual_output(
+    def get_sem_and_visual_output(
         self,
         input_ids,
         token_type_ids,
@@ -423,14 +425,15 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             b, pair, channel, h, w = semantic_pair.shape
             semantic_pair = semantic_pair.view(b * pair, channel, h, w)
 
-        sequence_output, sequence_hidden = self.get_sequence_output(
-            input_ids, token_type_ids, attention_mask, shaped=True
-        )
+        
         visual_output, visual_hidden = self.get_visual_output(
-            image_pair, semantic_pair, visual_mask, shaped=True, video_frame=video_frame
+            image_pair, visual_mask, shaped=True, video_frame=video_frame
+        )
+        sem_output, sem_hidden = self.get_sem_output(
+            semantic_pair, visual_mask, shaped=True, video_frame=video_frame
         )
 
-        return sequence_output, visual_output, sequence_hidden, visual_hidden
+        return sem_output, visual_output, sem_hidden, visual_hidden
 
     def _get_decoder_score(self, visual_output, visual_mask, input_caption_ids, decoder_mask, shaped=False):
 
