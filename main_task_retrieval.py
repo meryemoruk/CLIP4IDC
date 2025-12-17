@@ -750,8 +750,12 @@ def eval_epoch(args, model, test_dataloader, device):
                 sim_matrix.shape[2],
             ),
         )"""
+       # 1. NumPy array'i PyTorch Tensor'una çeviriyoruz
+        sim_matrix = torch.tensor(sim_matrix)
+
+        # 2. Artık Tensor olduğu için .unsqueeze() çalışacaktır
         if len(sim_matrix.shape) == 2:
-                sim_matrix = sim_matrix.unsqueeze(1)
+            sim_matrix = sim_matrix.unsqueeze(1)
         tv_metrics = tensor_text_to_video_metrics(sim_matrix)
         vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
 
