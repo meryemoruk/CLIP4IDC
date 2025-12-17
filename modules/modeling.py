@@ -396,7 +396,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             video_frame=video_frame,
             return_hidden=True,
         )
-        visual_output_semantic, visual_hidden_semantic = self.clip.encode_image(
+        visual_output_semantic, visual_hidden_semantic = self.clip.encode_image_sem(
             semantic_pair,
             video_frame=video_frame,
             return_hidden=True,

@@ -722,6 +722,19 @@ class CLIP(nn.Module):
             return x, hidden
 
         return x
+    
+    def encode_image_sem(self, image, return_hidden=False, video_frame=-1):
+        hidden = self.semantic_v(image.type(self.dtype), video_frame=video_frame)
+        hidden = self.semantic_v.ln_post(hidden) @ self.visual.proj
+
+        x = torch.cat([hidden[:, 0, :].unsqueeze(1), hidden[:, 50, :].unsqueeze(1)], 1)
+        x = torch.mean(x, 1)
+        # x = hidden[:, 0, :]
+
+        if return_hidden:
+            return x, hidden
+
+        return x
 
     def encode_image_and_semantic_map(self, image_pair, semantic_pair, return_hidden=False, video_frame=-1):
         image_hidden = self.visual(image_pair.type(self.dtype), video_frame=video_frame)
