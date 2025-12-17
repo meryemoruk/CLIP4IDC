@@ -750,7 +750,8 @@ def eval_epoch(args, model, test_dataloader, device):
                 sim_matrix.shape[2],
             ),
         )"""
-
+        if len(sim_matrix.shape) == 2:
+                sim_matrix = sim_matrix.unsqueeze(1)
         tv_metrics = tensor_text_to_video_metrics(sim_matrix)
         vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
 
