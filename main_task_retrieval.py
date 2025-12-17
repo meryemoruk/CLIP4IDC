@@ -690,7 +690,7 @@ def eval_epoch(args, model, test_dataloader, device):
                     )
                     sem_output, _ = model.get_sem_output(
                         semantic_pair,
-                        pair_mask,
+                        pair_mask
                     )
 
                     batch_visual_output_list.append(visual_output)

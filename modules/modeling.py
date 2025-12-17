@@ -380,10 +380,10 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
     def get_sem_output(self, semantic_pair, visual_mask, shaped=False, video_frame=-1):
         if shaped is False:
             visual_mask = visual_mask.view(-1, visual_mask.shape[-1])
-            video_frame = pair
-
+            
             semantic_pair = torch.as_tensor(semantic_pair).float()
             b, pair, channel, h, w = semantic_pair.shape
+            video_frame = pair
             semantic_pair = semantic_pair.view(b * pair, channel, h, w)
 
         bs_pair = visual_mask.size(0)
