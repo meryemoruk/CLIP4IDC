@@ -696,7 +696,7 @@ def eval_epoch(args, model, test_dataloader, device):
                     batch_visual_output_list.append(visual_output)
                     batch_list_v.append((pair_mask,))
 
-                    batch_sem_output_list.append(visual_output)
+                    batch_sem_output_list.append(sem_output)
                     batch_list_s.append((pair_mask,))
                 total_pair_num += b
 
@@ -716,7 +716,7 @@ def eval_epoch(args, model, test_dataloader, device):
             batch_visual_output_list,
         )
         sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
-
+        """
     if multi_sentence_:
         cut_off_points2len_ = [itm + 1 for itm in cut_off_points_]
         max_length = max(
@@ -749,7 +749,7 @@ def eval_epoch(args, model, test_dataloader, device):
                 sim_matrix.shape[1],
                 sim_matrix.shape[2],
             ),
-        )
+        )"""
 
         tv_metrics = tensor_text_to_video_metrics(sim_matrix)
         vt_metrics = compute_metrics(tensor_video_to_text_sim(sim_matrix))
