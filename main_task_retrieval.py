@@ -448,17 +448,17 @@ def train_epoch(
 
 def _run_on_single_gpu(
     model,
-    batch_list_t,
+    batch_list_s,
     batch_list_v,
-    batch_sequence_output_list,
+    batch_sem_output_list,
     batch_visual_output_list,
 ):
     sim_matrix = []
-    write_debug("batch run on singledaki", batch_list_t, False)
-    write_debug("batch_sequence_output_list", batch_sequence_output_list, False)
-    for idx1, b1 in enumerate(batch_list_t):
+    write_debug("batch run on singledaki", batch_list_s, False)
+    write_debug("batch_sequence_output_list", batch_sem_output_list, False)
+    for idx1, b1 in enumerate(batch_list_s):
         input_mask, segment_ids, *_tmp = b1
-        sequence_output = batch_sequence_output_list[idx1]
+        sequence_output = batch_sem_output_list[idx1]
         each_row = []
         for idx2, b2 in enumerate(batch_list_v):
             pair_mask, *_tmp = b2
@@ -636,9 +636,9 @@ def eval_epoch(args, model, test_dataloader, device):
 
     model.eval()
     with torch.no_grad():
-        batch_list_t = []
+        batch_list_s = []
         batch_list_v = []
-        batch_sequence_output_list, batch_visual_output_list = [], []
+        batch_sem_output_list, batch_visual_output_list = [], []
         total_pair_num = 0
 
         # ----------------------------
@@ -670,19 +670,6 @@ def eval_epoch(args, model, test_dataloader, device):
                 # multi-sentences retrieval means: one pair has two or more
                 # descriptions.
                 b, *_t = image_pair.shape
-                sequence_output, _ = model.get_sequence_output(
-                    input_ids,
-                    segment_ids,
-                    input_mask,
-                )
-
-                batch_sequence_output_list.append(sequence_output)
-                batch_list_t.append(
-                    (
-                        input_mask,
-                        segment_ids,
-                    ),
-                )
 
                 s_, e_ = total_pair_num, total_pair_num + b
                 filter_inds = [itm - s_ for itm in cut_off_points_ if itm >= s_ and itm < e_]
@@ -699,12 +686,18 @@ def eval_epoch(args, model, test_dataloader, device):
                     )
                     visual_output, _ = model.get_visual_output(
                         image_pair,
+                        pair_mask,
+                    )
+                    sem_output, _ = model.get_sem_output(
                         semantic_pair,
                         pair_mask,
                     )
 
                     batch_visual_output_list.append(visual_output)
                     batch_list_v.append((pair_mask,))
+
+                    batch_sem_output_list.append(visual_output)
+                    batch_list_s.append((pair_mask,))
                 total_pair_num += b
 
             logger.info(f"{bid}/{len(test_dataloader)}\r")
@@ -717,9 +710,9 @@ def eval_epoch(args, model, test_dataloader, device):
 
         sim_matrix = _run_on_single_gpu(
             model,
-            batch_list_t,
+            batch_list_s,
             batch_list_v,
-            batch_sequence_output_list,
+            batch_sem_output_list,
             batch_visual_output_list,
         )
         sim_matrix = np.concatenate(tuple(sim_matrix), axis=0)
