@@ -607,7 +607,6 @@ def _run_on_single_gpu_retrieval(
 
     return result
 
-
 def eval_epoch(args, model, test_dataloader, device):
     if hasattr(model, "module"):
         model = model.module.to(device)
