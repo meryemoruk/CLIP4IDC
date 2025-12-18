@@ -509,6 +509,14 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         return text_out, video_out
 
     def _loose_similarity(self, sequence_output, visual_output, attention_mask, visual_mask):
+
+        if isinstance(visual_output, tuple):
+            visual_output = visual_output[0]
+            
+        # Aynı durum sequence_output (metin) için de geçerli olabilir, onu da garantiye alalım
+        if isinstance(sequence_output, tuple):
+            sequence_output = sequence_output[0]
+            
         sequence_output, visual_output = sequence_output.contiguous(), visual_output.contiguous()
 
         # we are usin single gpu, no need for allgather
