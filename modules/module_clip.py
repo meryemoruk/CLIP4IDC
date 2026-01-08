@@ -466,6 +466,9 @@ class VisualTransformer(nn.Module):
             
             # Semantic map: [Batch, 1, H, W] -> [Batch, 1, Grid_H, Grid_W]
             sem_down = F.interpolate(semantic_map, size=(grid_h, grid_w), mode='nearest')
+
+            if sem_down.shape[1] > 1:
+                sem_down, _ = torch.max(sem_down, dim=1, keepdim=True)
             
             # Flatten: [Batch, Grid*Grid]
             sem_flat = sem_down.view(sem_down.size(0), -1) 
