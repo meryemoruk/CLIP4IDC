@@ -328,7 +328,6 @@ class ResidualAttentionBlock(nn.Module):
         super().__init__()
 
         self.attn = nn.MultiheadAttention(d_model, n_head)
-        self.attn = self.attn.cuda()
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(
             OrderedDict(
@@ -346,6 +345,9 @@ class ResidualAttentionBlock(nn.Module):
         mask_to_use = attn_mask if attn_mask is not None else self.attn_mask
         if mask_to_use is not None and hasattr(mask_to_use, "__call__"):
             mask_to_use = mask_to_use(x.size(0))
+
+        if mask_to_use is not None:
+            mask_to_use = mask_to_use.to(dtype=x.dtype, device=x.device)
 
         # MultiheadAttention maske boyutu: (Batch*NumHeads, Target, Source) veya (Target, Source)
         return self.attn(x, x, x, need_weights=False, attn_mask=mask_to_use)[0]
