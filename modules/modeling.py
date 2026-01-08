@@ -301,6 +301,8 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         attention_mask = attention_mask.view(-1, attention_mask.shape[-1])
         image_mask = image_mask.view(-1, image_mask.shape[-1])
 
+
+
         # concatenate image pairs
         image_pairs = torch.cat([bef_image, aft_image], 1)
         b, pair, channel, h, w = image_pairs.shape
@@ -391,13 +393,10 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             semantic_pair = semantic_pair.view(b * pair, channel, h, w)
 
         bs_pair = visual_mask.size(0)
+
         visual_output_rgb, visual_hidden_rgb = self.clip.encode_image(
             image_pair,
-            video_frame=video_frame,
-            return_hidden=True,
-        )
-        visual_output_semantic, visual_hidden_semantic = self.clip.encode_image_sem(
-            semantic_pair,
+            semantic_map=semantic_pair,
             video_frame=video_frame,
             return_hidden=True,
         )
@@ -405,9 +404,8 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         visual_output_rgb = visual_output_rgb.float()
         visual_hidden_rgb = visual_hidden_rgb.view(bs_pair, -1, visual_hidden_rgb.size(-1))
 
-        visual_hidden_semantic = visual_hidden_semantic.float()
-        visual_hidden_semantic = visual_hidden_semantic.float()
-        visual_hidden_semantic = visual_hidden_semantic.view(bs_pair, -1, visual_hidden_semantic.size(-1))
+        visual_output_semantic = visual_output_rgb 
+        visual_hidden_semantic = visual_hidden_rgb
 
         return visual_output_rgb, visual_hidden_rgb, visual_output_semantic, visual_hidden_semantic
 

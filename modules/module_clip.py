@@ -341,19 +341,23 @@ class ResidualAttentionBlock(nn.Module):
         self.ln_2 = LayerNorm(d_model)
         self.attn_mask = attn_mask
 
-    def attention(self, x: torch.Tensor):
-        attn_mask_ = self.attn_mask
-        if self.attn_mask is not None and hasattr(self.attn_mask, "__call__"):
-            attn_mask_ = self.attn_mask(x.size(0))  # LND
+    def attention(self, x: torch.Tensor, attn_mask=None):
+        mask_to_use = attn_mask if attn_mask is not None else self.attn_mask
+        if mask_to_use is not None and hasattr(mask_to_use, "__call__"):
+            mask_to_use = mask_to_use(x.size(0))
 
-        attn_mask_ = attn_mask_.to(dtype=x.dtype, device=x.device) if attn_mask_ is not None else None
-        return self.attn(x, x, x, need_weights=False, attn_mask=attn_mask_)[0]
+        # MultiheadAttention maske boyutu: (Batch*NumHeads, Target, Source) veya (Target, Source)
+        return self.attn(x, x, x, need_weights=False, attn_mask=mask_to_use)[0]
 
     def forward(self, x_tuple: tuple):
-        x, video_frame = x_tuple
-        x = x + self.attention(self.ln_1(x))
+        # Tuple artık 3 elemanlı olabilir: (x, video_frame, attn_mask)
+        x = x_tuple[0]
+        video_frame = x_tuple[1]
+        attn_mask = x_tuple[2] if len(x_tuple) > 2 else None
+
+        x = x + self.attention(self.ln_1(x), attn_mask=attn_mask)
         x = x + self.mlp(self.ln_2(x))
-        return (x, video_frame)
+        return (x, video_frame, attn_mask)
 
     def visualize_attention(self, x: torch.Tensor):
         attn_outputs, attn_weights = self.attn(
@@ -382,8 +386,8 @@ class Transformer(nn.Module):
             *[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)],
         )
 
-    def forward(self, x: torch.Tensor, video_frame=-1):
-        return self.resblocks((x, video_frame))[0]
+    def forward(self, x: torch.Tensor, video_frame=-1, attn_mask=None):
+        return self.resblocks((x, video_frame, attn_mask))[0]
 
 
 class VisualTransformer(nn.Module):
@@ -447,7 +451,53 @@ class VisualTransformer(nn.Module):
                 bias=False,
             )
 
-    def forward(self, x: torch.Tensor, video_frame=-1, visualize=False):
+    def forward(self, x: torch.Tensor, semantic_map=None, video_frame=-1, visualize=False):
+        
+        attn_mask = None
+        if semantic_map is not None:
+            # 1. Semantik haritayı patch grid boyutuna indirge (örn: 224 -> 14)
+            # x.shape[-1] image width, self.conv1.kernel_size[0] patch size
+            patch_size = self.conv1.kernel_size[0] if isinstance(self.conv1.kernel_size, tuple) else self.conv1.kernel_size
+            grid_h = x.shape[-2] // patch_size
+            grid_w = x.shape[-1] // patch_size
+            
+            # Semantic map: [Batch, 1, H, W] -> [Batch, 1, Grid_H, Grid_W]
+            sem_down = F.interpolate(semantic_map, size=(grid_h, grid_w), mode='nearest')
+            
+            # Flatten: [Batch, Grid*Grid]
+            sem_flat = sem_down.view(sem_down.size(0), -1) 
+            
+            # CLS token için başına 1 ekle (CLS her zaman görünür olmalı)
+            # [Batch, 1 + Grid*Grid]
+            cls_token_mask = torch.ones(sem_flat.size(0), 1, device=sem_flat.device)
+            full_mask = torch.cat([cls_token_mask, sem_flat], dim=1)
+            
+            # Maskeyi attention matrisine çevir [Batch, SeqLen, SeqLen]
+            # 0 olan yerler (önemsiz) maskelenecek (-inf), 1 olan yerler (0.0) kalacak
+            # PyTorch attn_mask: 0 -> attend, -inf -> ignore
+            
+            # full_mask > 0 ise attend (0.0), değilse ignore (-inf)
+            attn_mask = torch.zeros(full_mask.size(0), full_mask.size(1), full_mask.size(1), device=full_mask.device)
+            
+            # Sütun bazlı maskeleme: Eğer j. token masked ise, i. token ona bakamaz.
+            # full_mask shape: [Batch, SeqLen]
+            # mask_bool: [Batch, 1, SeqLen]
+            mask_bool = full_mask.unsqueeze(1) > 0.001 # Threshold, 0'dan büyükse geçerli
+            
+            # Expand to [Batch, SeqLen, SeqLen]
+            attn_mask_bool = mask_bool.expand(-1, full_mask.size(1), -1)
+            
+            attn_mask = attn_mask.masked_fill(~attn_mask_bool, float("-inf"))
+            
+            # Çok önemli: Attention mask head sayısı ile çarpılmalıdır
+            # Ancak PyTorch nn.MultiheadAttention eğer 3D mask (B*NumHeads, L, S) verilirse kabul eder.
+            # Ya da (B, L, S) kabul eder.
+            # Biz (B, L, S) döndürüyoruz. Ama batch size içindeki head sayısını handle etmesi için:
+            num_heads = self.transformer.resblocks[0].attn.num_heads
+            # [Batch, L, L] -> [Batch * NumHeads, L, L]
+            attn_mask = attn_mask.repeat_interleave(num_heads, dim=0)
+
+
         if self.linear_patch == "3d":
             assert video_frame != -1
             x_3d = x.reshape(
@@ -501,7 +551,7 @@ class VisualTransformer(nn.Module):
                 all_attn_weights.append(attn_weights)
         else:
             for i in range(self.intra_layers):
-                x = self.transformer.resblocks[i]((x, video_frame))[0]
+                x = self.transformer.resblocks[i]((x, video_frame, attn_mask))[0]
         x = x.permute(1, 0, 2)  # LND -> NLD
 
         bs = x.size(0) // video_frame
@@ -710,22 +760,9 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image, return_hidden=False, video_frame=-1):
-        hidden = self.visual(image.type(self.dtype), video_frame=video_frame)
+    def encode_image(self, image, semantic_map=None, return_hidden=False, video_frame=-1):
+        hidden = self.visual(image.type(self.dtype), semantic_map=semantic_map, video_frame=video_frame)
         hidden = self.visual.ln_post(hidden) @ self.visual.proj
-
-        x = torch.cat([hidden[:, 0, :].unsqueeze(1), hidden[:, 50, :].unsqueeze(1)], 1)
-        x = torch.mean(x, 1)
-        # x = hidden[:, 0, :]
-
-        if return_hidden:
-            return x, hidden
-
-        return x
-    
-    def encode_image_sem(self, image, return_hidden=False, video_frame=-1):
-        hidden = self.semantic_v(image.type(self.dtype), video_frame=video_frame)
-        hidden = self.semantic_v.ln_post(hidden) @ self.visual.proj
 
         x = torch.cat([hidden[:, 0, :].unsqueeze(1), hidden[:, 50, :].unsqueeze(1)], 1)
         x = torch.mean(x, 1)
