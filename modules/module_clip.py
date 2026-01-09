@@ -610,8 +610,8 @@ class CLIP(nn.Module):
         )
 
         self.visual_fusion = FeatureFusionModule(embed_dim)
-        self.change_projection = nn.Linear(768 * 2, 768) # width genelde 768 veya 1024'tür
-        self.change_projection_sem = nn.Linear(768 * 2, 768) # width genelde 768 veya 1024'tür
+        self.change_projection = nn.Linear(embed_dim * 2, embed_dim) # width genelde embed_dim veya 1024'tür
+        self.change_projection_sem = nn.Linear(embed_dim * 2, embed_dim) # width genelde 768 veya 1024'tür
 
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)
