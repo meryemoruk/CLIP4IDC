@@ -1157,7 +1157,7 @@ def main():
                 continue
             else:
                 # parameters which < freeze_layer_num will be frozen
-                param.requires_grad = False
+                param.requires_grad = True
                 logger.info(f"Freeze layer: {name}")
 
     # ####################################

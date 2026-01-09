@@ -643,7 +643,7 @@ def main():
     assert args.freeze_layer_num <= 12 and args.freeze_layer_num >= -1
     if hasattr(model, "clip") and args.freeze_layer_num > -1:
         for name, param in model.clip.named_parameters():
-            # param.requires_grad = False
+            # param.requires_grad = True
             # # top layers always need to train
             if args.datatype == "spot":
                 if name.find("token_embedding.weight") == 0:
@@ -664,7 +664,7 @@ def main():
             else:
                 # paramenters which < freeze_layer_num will be freezed
                 print(name)
-                param.requires_grad = False
+                param.requires_grad = True
 
     ## ####################################
     # dataloader loading
