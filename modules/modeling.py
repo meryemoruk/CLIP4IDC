@@ -59,15 +59,17 @@ class CLIP4IDCPreTrainedModel(PreTrainedModel, nn.Module):
 
         if state_dict is None:
             state_dict = {}
-            logger.warning("state_dict is None, the model will be initialized randomly.")
+            logger.warning("!!!!! --- State_dict is None, the model will be initialized randomly. --- !!!!!")
         pretrained_clip_name = "ViT-B/32"
         if hasattr(task_config, "pretrained_clip_name"):
+            logger.info("Pretrained CLIP name: {}".format(task_config.pretrained_clip_name))
             pretrained_clip_name = task_config.pretrained_clip_name
         clip_state_dict = CLIP.get_config(
             pretrained_clip_name=pretrained_clip_name
         )  # returns the state_dict of the pretrained model
         for key, val in clip_state_dict.items():
             new_key = "clip." + key
+            logger.info("Adding CLIP key to state_dict: {}".format(new_key))
             if new_key not in state_dict:
                 state_dict[new_key] = val.clone()
 
@@ -86,13 +88,14 @@ class CLIP4IDCPreTrainedModel(PreTrainedModel, nn.Module):
             task_config=task_config,
         )
 
-        # explain cls : class method that returns a new instance of the class cls with the same arguments that were passed to it during the call of the class method.
+        # explain cls : class method that returns a new instance of the class 
+        # cls with the same arguments that were passed to it during the call of the class method.
         model = cls(cross_config, decoder_config, clip_state_dict, *inputs, **kwargs)
         logger.info("Weights of CLIP4IDC not initialized from pretrained model: ")
 
         ## ===> Initialization trick [HARD CODE]
         if model.linear_patch == "3d":
-            logger.info("3d" * 100)
+            logger.info("Using 3D linear patch embedding initialization trick for conv2 weights...")
             contain_conv2 = False
             for key in state_dict.keys():
                 if key.find("visual.conv2.weight") > -1:

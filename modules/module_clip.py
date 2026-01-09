@@ -538,23 +538,6 @@ class VisualTransformer(nn.Module):
             return x, all_attn_weights
         return x
 
-
-class FeatureFusionModule(nn.Module):
-    def __init__(self, feature_dim):
-        super(FeatureFusionModule, self).__init__()
-
-        self.fusion_layer = nn.Linear(feature_dim * 2, feature_dim)
-        self.activation = nn.ReLU()
-
-    def forward(self, visual_features, semantic_features):
-
-        concatenated_features = torch.cat([visual_features, semantic_features], dim=-1)
-        fused_features = self.fusion_layer(concatenated_features)
-        fused_features = self.activation(fused_features)
-
-        return fused_features
-
-
 class CLIP(nn.Module):
     def __init__(
         self,
@@ -609,7 +592,6 @@ class CLIP(nn.Module):
             attn_mask=self.build_attention_mask,
         )
 
-        self.visual_fusion = FeatureFusionModule(embed_dim)
         self.change_projection = nn.Linear(embed_dim * 2, embed_dim) # width genelde embed_dim veya 1024'tür
         self.change_projection_sem = nn.Linear(embed_dim * 2, embed_dim) # width genelde 768 veya 1024'tür
 
@@ -747,33 +729,6 @@ class CLIP(nn.Module):
             return x, hidden
 
         return x
-
-    def encode_image_and_semantic_map(self, image_pair, semantic_pair, return_hidden=False, video_frame=2):
-        image_hidden = self.visual(image_pair.type(self.dtype), video_frame=video_frame)
-        image_features_pooled = self.visual.ln_post(image_hidden) @ self.visual.proj
-
-        semantic_hidden = self.semantic_v(semantic_pair.type(self.dtype), video_frame=video_frame)
-        semantic_features_pooled = self.semantic_v.ln_post(semantic_hidden) @ self.semantic_v.proj
-
-        # Basitce karsilikli indisleri toplayalim
-        # FIXME:
-        # combined_visual_features = image_features_pooled + semantic_features_pooled
-        combined_visual_features = self.visual_fusion(image_features_pooled, semantic_features_pooled)
-
-        # 4. HATA BURADAYDI: image_features_pooled yerine combined_visual_features kullanılmalı
-        # T1 ve T2 görüntülerinin CLS token'larını (Index 0 ve 50) alıp ortalamasını alıyoruz.
-        x = torch.cat(
-            [
-                combined_visual_features[:, 0, :].unsqueeze(1),  # T1 CLS Token (Fused)
-                combined_visual_features[:, 50, :].unsqueeze(1)  # T2 CLS Token (Fused)
-            ], 
-            1
-        )
-        x = torch.mean(x, 1) # Global Representation
-
-        if return_hidden:
-            # 5. Decoder'a da FUSED özellikleri göndermeliyiz
-            return x, combined_visual_features
 
     def encode_text(self, text, return_hidden=False):
         x = self.token_embedding(text).type(

@@ -2,7 +2,6 @@ import argparse
 import os
 import random
 import time
-
 import numpy as np
 import torch
 
@@ -15,13 +14,8 @@ from modules.modeling import CLIP4IDC
 from modules.optimization import BertAdam
 from modules.tokenization_clip import SimpleTokenizer as ClipTokenizer
 
-from exploringDebugging import write_debug
-
-from util import parallel_apply, get_logger
+from util import get_logger
 from dataloaders.data_dataloaders import DATALOADER_DICT
-
-if torch.cuda.device_count() > 1:
-    torch.distributed.init_process_group(backend="nccl")
 
 
 # 1. Force the backend to 'agg' by OVERRIDING any existing value
@@ -312,6 +306,140 @@ def accumulate_vector():
         'sequence_output': final_sequence_output.detach().cpu(),
         'pair_mask': final_pair_mask.detach().cpu()
     }, "tum_veri_seti_birlestirilmis.pt")
+
+def _run_on_single_gpu_retrieval(
+    args,
+    model,
+    inference_result,
+    index,
+    split = "test"
+):
+    # Dosya yollarını kendine göre düzenle
+    if(args.dataloader_type == "train1"):
+        split = "train"
+    okuyucu = VeriSetiOkuyucu(
+        tensor_path='tum_veri_seti_birlestirilmis.pt', 
+        json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json',
+        split=split
+    )
+
+    json_path_catag = '/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged_catag.json'
+
+    data = okuyucu.get_item(index)
+
+    input_mask = data["input_mask"]
+    segment_ids = data["segment_ids"]
+    sequence_output = data["sequence_output"]
+
+    result = []
+
+    device = next(model.parameters()).device
+
+    for i, c_visual_output in enumerate(okuyucu.visual_output):
+        pair_mask = okuyucu.get_item(i)["pair_mask"]
+        b1b2_logits, *_tmp = model.get_similarity_logits(
+            sequence_output.to(device).unsqueeze(0),
+            c_visual_output.to(device).unsqueeze(0),
+            input_mask,
+            pair_mask,
+        )
+        b1b2_logits = b1b2_logits.cpu().detach().numpy()
+        result.append(b1b2_logits)
+
+    result_np = np.array(result)
+
+    # 2. flatten() ile tüm iç içe parantezleri kaldırıp tek bir düz çizgi haline getiriyoruz
+    # Yeni boyut: (6121,) olacak. Artık dümdüz bir sayı dizisi.
+    result_flat = result_np.flatten()
+
+    # 3. Şimdi Tensor'a çevirip Top-K işlemini yapabiliriz
+    result_tensor = torch.from_numpy(result_flat)
+    # 1. Adım: argsort ile sıralama yapıldığında elemanların nereye gideceğini (indeksleri) bulur.
+    # Bu küçükten büyüğe sıralar, o yüzden sonuna dilimleme ekleriz.
+    top_5_degerler, top_5_indeksler = torch.topk(result_tensor, k=5)
+    tum_sirali_indeksler = torch.argsort(result_tensor, descending=True)
+
+    # Eğer bunları ekrana yazdırmak veya listeye çevirmek istersen:
+    top_5_deger_listesi = top_5_degerler.cpu().numpy().tolist()
+    top_5_indeks_listesi = top_5_indeksler.cpu().numpy().tolist()
+
+    top_5_captions = []
+    top_5_images = []
+    for i in top_5_indeks_listesi:
+        tempData = okuyucu.get_item(i)
+        top_5_captions.append(tempData["text"])
+        top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "A",
+            tempData["image_file"]))
+        top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "B",
+            tempData["image_file"]))
+        
+    
+    import shutil
+
+    # 1. Create the folder if it doesn't exist
+    target_folder = 'retrivalImages/'
+    os.makedirs(target_folder, exist_ok=True)
+    
+    for i, path in enumerate(top_5_images):
+        image_name = str(i) + ".png"
+        dst_path = os.path.join(target_folder, image_name)
+        # copy2 preserves metadata (creation time, modification time, etc.)
+        shutil.copy2(path, dst_path)
+
+        print(f"Copied to {dst_path}")
+    
+
+    print(f"Original Resim Benzerliği: {result_flat[index]}")
+    print(f"Top 5 Benzerlikler: {top_5_deger_listesi}")
+    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
+    print(f"Top 5 Captionlar: {top_5_captions}")
+    print(f"Top 5 Images: {top_5_images}")
+
+    og_index = -1
+    for i, m in enumerate(tum_sirali_indeksler):
+        if(m == index):
+            og_index = i
+            break
+    
+    data_found = []
+    found_name = []
+    catag_id = [-1,-1,-1]
+    og_catag_id = -1
+    
+    import json
+    with open(json_path_catag, 'r') as f:
+        # Parse file content directly into a Python object
+        jsonCatag = json.load(f)
+        for image_entry in jsonCatag['images']:
+                if image_entry.get('filename') == data["image_file"]:
+                    og_catag_id = image_entry["category"]
+                    break
+        for i in range(0,3):
+            data_found.append(okuyucu.get_item(tum_sirali_indeksler[i])) 
+            found_name.append(data_found[i]["image_file"])
+            for image_entry in jsonCatag['images']:
+                if image_entry.get('filename') == found_name[i]:
+                    catag_id[i] = image_entry["category"]
+                    break
+
+
+    import json
+
+    inference_result_data = {
+        "index": index,
+        "rank": og_index,
+        "confidence": top_5_deger_listesi[0],
+        "o_catag": og_catag_id,
+        "f_catag_1": catag_id[0],
+        "f_catag_2": catag_id[1],
+        "f_catag_3": catag_id[2]
+    }
+
+    inference_result["list"].append(inference_result_data)    
+
+    return result
+
+
 
 
 def get_args(description="CLIP4IDC on Retrieval Task"):
@@ -720,8 +848,6 @@ def _run_on_single_gpu(
     batch_visual_output_list,
 ):
     sim_matrix = []
-    write_debug("batch run on singledaki", batch_list_t, False)
-    write_debug("batch_sequence_output_list", batch_sequence_output_list, False)
     for idx1, b1 in enumerate(batch_list_t):
         input_mask, segment_ids, *_tmp = b1
         sequence_output = batch_sequence_output_list[idx1]
@@ -740,139 +866,6 @@ def _run_on_single_gpu(
         each_row = np.concatenate(tuple(each_row), axis=-1)
         sim_matrix.append(each_row)
     return sim_matrix
-
-def _run_on_single_gpu_retrieval(
-    args,
-    model,
-    inference_result,
-    index,
-    split = "test"
-):
-    # Dosya yollarını kendine göre düzenle
-    if(args.dataloader_type == "train1"):
-        split = "train"
-    okuyucu = VeriSetiOkuyucu(
-        tensor_path='tum_veri_seti_birlestirilmis.pt', 
-        json_path='/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged.json',
-        split=split
-    )
-
-    json_path_catag = '/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG/merged_catag.json'
-
-    data = okuyucu.get_item(index)
-
-    input_mask = data["input_mask"]
-    segment_ids = data["segment_ids"]
-    sequence_output = data["sequence_output"]
-
-    result = []
-
-    device = next(model.parameters()).device
-
-    for i, c_visual_output in enumerate(okuyucu.visual_output):
-        pair_mask = okuyucu.get_item(i)["pair_mask"]
-        b1b2_logits, *_tmp = model.get_similarity_logits(
-            sequence_output.to(device).unsqueeze(0),
-            c_visual_output.to(device).unsqueeze(0),
-            input_mask,
-            pair_mask,
-        )
-        b1b2_logits = b1b2_logits.cpu().detach().numpy()
-        result.append(b1b2_logits)
-
-    result_np = np.array(result)
-
-    # 2. flatten() ile tüm iç içe parantezleri kaldırıp tek bir düz çizgi haline getiriyoruz
-    # Yeni boyut: (6121,) olacak. Artık dümdüz bir sayı dizisi.
-    result_flat = result_np.flatten()
-
-    # 3. Şimdi Tensor'a çevirip Top-K işlemini yapabiliriz
-    result_tensor = torch.from_numpy(result_flat)
-    # 1. Adım: argsort ile sıralama yapıldığında elemanların nereye gideceğini (indeksleri) bulur.
-    # Bu küçükten büyüğe sıralar, o yüzden sonuna dilimleme ekleriz.
-    top_5_degerler, top_5_indeksler = torch.topk(result_tensor, k=5)
-    tum_sirali_indeksler = torch.argsort(result_tensor, descending=True)
-
-    # Eğer bunları ekrana yazdırmak veya listeye çevirmek istersen:
-    top_5_deger_listesi = top_5_degerler.cpu().numpy().tolist()
-    top_5_indeks_listesi = top_5_indeksler.cpu().numpy().tolist()
-
-    top_5_captions = []
-    top_5_images = []
-    for i in top_5_indeks_listesi:
-        tempData = okuyucu.get_item(i)
-        top_5_captions.append(tempData["text"])
-        top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "A",
-            tempData["image_file"]))
-        top_5_images.append(os.path.join("/content/CLIP4IDC/Second_CC_dataset/SECOND-CC-AUG", split, "rgb", "B",
-            tempData["image_file"]))
-        
-    
-    import shutil
-
-    # 1. Create the folder if it doesn't exist
-    target_folder = 'retrivalImages/'
-    os.makedirs(target_folder, exist_ok=True)
-    
-    for i, path in enumerate(top_5_images):
-        image_name = str(i) + ".png"
-        dst_path = os.path.join(target_folder, image_name)
-        # copy2 preserves metadata (creation time, modification time, etc.)
-        shutil.copy2(path, dst_path)
-
-        print(f"Copied to {dst_path}")
-    
-
-    print(f"Original Resim Benzerliği: {result_flat[index]}")
-    print(f"Top 5 Benzerlikler: {top_5_deger_listesi}")
-    print(f"Top 5 İndeksler: {top_5_indeks_listesi}")
-    print(f"Top 5 Captionlar: {top_5_captions}")
-    print(f"Top 5 Images: {top_5_images}")
-
-    og_index = -1
-    for i, m in enumerate(tum_sirali_indeksler):
-        if(m == index):
-            og_index = i
-            break
-    
-    data_found = []
-    found_name = []
-    catag_id = [-1,-1,-1]
-    og_catag_id = -1
-    
-    import json
-    with open(json_path_catag, 'r') as f:
-        # Parse file content directly into a Python object
-        jsonCatag = json.load(f)
-        for image_entry in jsonCatag['images']:
-                if image_entry.get('filename') == data["image_file"]:
-                    og_catag_id = image_entry["category"]
-                    break
-        for i in range(0,3):
-            data_found.append(okuyucu.get_item(tum_sirali_indeksler[i])) 
-            found_name.append(data_found[i]["image_file"])
-            for image_entry in jsonCatag['images']:
-                if image_entry.get('filename') == found_name[i]:
-                    catag_id[i] = image_entry["category"]
-                    break
-
-
-    import json
-
-    inference_result_data = {
-        "index": index,
-        "rank": og_index,
-        "confidence": top_5_deger_listesi[0],
-        "o_catag": og_catag_id,
-        "f_catag_1": catag_id[0],
-        "f_catag_2": catag_id[1],
-        "f_catag_3": catag_id[2]
-    }
-
-    inference_result["list"].append(inference_result_data)    
-
-    return result
-
 
 def eval_epoch(args, model, test_dataloader, device):
     if hasattr(model, "module"):
@@ -910,12 +903,7 @@ def eval_epoch(args, model, test_dataloader, device):
         # ----------------------------
         # 1. cache the features
         # ----------------------------
-        write_debug("test dataloader", test_dataloader, False)
-        write_debug("data set test dataloader'in içindeki", test_dataloader.dataset, False)
-        dontLoop = True
         for bid, batch in enumerate(test_dataloader):
-            write_debug("length of batch", len(batch[0]), dontLoop)
-            dontLoop = False
             batch = tuple(t.to(device) for t in batch)
             
             (
@@ -1060,14 +1048,6 @@ def main():
     args = set_seed_logger(args)
     device, n_gpu = init_device(args, args.local_rank)
 
-    if args.n_gpu == 1:
-        torch.distributed.init_process_group(
-            backend='gloo',   # 'nccl' if using GPU, 'gloo' works for CPU as well
-            init_method='tcp://127.0.0.1:29500',
-            rank=0,
-            world_size=1
-        )
-
     tokenizer = ClipTokenizer()
 
     assert args.task_type == "retrieval"
@@ -1076,13 +1056,14 @@ def main():
     # ####################################
     # freeze testing
     # ####################################
+
     assert args.freeze_layer_num <= 12 and args.freeze_layer_num >= -1
     if hasattr(model, "clip") and args.freeze_layer_num > -1:
         for name, param in model.clip.named_parameters():
 
             # top layers always need to train
             if (
-                name.find("ln_final.") == 0
+                   name.find("ln_final.") == 0
                 or name.find("text_projection") == 0
                 or name.find("logit_scale") == 0
                 or name.find("visual.ln_post.") == 0
@@ -1097,7 +1078,8 @@ def main():
                 or name.find("semantic_v.joint_positional_embedding") == 0
                 or name.find("visual.ln_mid") == 0
                 or name.find("semantic_v.ln_mid") == 0
-                or name.find("clip.visual_fusion.fusion_layer") == 0
+                or name.find("clip.change_projection") == 0
+                or name.find("clip.change_projection_sem") == 0
             ):
                 continue  # need to train
             elif (
@@ -1113,7 +1095,7 @@ def main():
                 continue
             else:
                 # parameters which < freeze_layer_num will be frozen
-                param.requires_grad = True
+                param.requires_grad = False
                 logger.info(f"Freeze layer: {name}")
 
     # ####################################
@@ -1151,24 +1133,14 @@ def main():
     # train and eval
     # ####################################
     if args.do_train:
-        train_dataloader, train_length, train_sampler = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
-        train_eval_dataloader, train_eval_length = DATALOADER_DICT[args.datatype]["train1"](
-            args,
-            tokenizer,
-            subset="train1",
-        )
+        train_dataloader, train_length = DATALOADER_DICT[args.datatype]["train"](args, tokenizer)
         
         num_train_optimization_steps = (
             int(len(train_dataloader) + args.gradient_accumulation_steps - 1) / args.gradient_accumulation_steps
         ) * args.epochs
 
-        # logger.info("*" * 80)
-        # logger.info(enumerate(train_dataloader))
-        # logger.info("*" * 80)
-
         coef_lr = args.coef_lr
         optimizer, scheduler, model = prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, args.local_rank, coef_lr=coef_lr)
-
 
         logger.info("***** Running training *****")
         logger.info("  Training Num examples = %d", train_length)
@@ -1180,6 +1152,7 @@ def main():
 
         best_score = 0.00001
         best_output_model_file = "None"
+
         # ##############################################################
         # resume optimizer state besides loss to continue train
         # ##############################################################
@@ -1199,8 +1172,6 @@ def main():
 
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
-            if torch.distributed.is_available() and torch.distributed.is_initialized():
-                train_sampler.set_epoch(epoch)
             tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
                                                scheduler, global_step, local_rank=args.local_rank)
             if args.local_rank == 0:
