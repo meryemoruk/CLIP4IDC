@@ -382,7 +382,7 @@ class Transformer(nn.Module):
             *[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)],
         )
 
-    def forward(self, x: torch.Tensor, video_frame=-1):
+    def forward(self, x: torch.Tensor, video_frame=2):
         return self.resblocks((x, video_frame))[0]
 
 
@@ -395,7 +395,7 @@ class VisualTransformer(nn.Module):
         layers: int,
         heads: int,
         output_dim: int,
-        linear_patch: str = "2d",
+        linear_patch: str = "3d",
         intra_layers: int = 9,
     ):
         super().__init__()
@@ -447,7 +447,7 @@ class VisualTransformer(nn.Module):
                 bias=False,
             )
 
-    def forward(self, x: torch.Tensor, video_frame=-1, visualize=False):
+    def forward(self, x: torch.Tensor, video_frame=2, visualize=False):
         if self.linear_patch == "3d":
             assert video_frame != -1
             x_3d = x.reshape(
@@ -571,7 +571,7 @@ class CLIP(nn.Module):
         transformer_heads: int,
         transformer_layers: int,
         # vision linear of patch
-        linear_patch: str = "2d",
+        linear_patch: str = "3d",
         intra_layers: int = 9,
     ):
         super().__init__()
@@ -610,6 +610,8 @@ class CLIP(nn.Module):
         )
 
         self.visual_fusion = FeatureFusionModule(embed_dim)
+        self.change_projection = nn.Linear(vision_width * 2, vision_width) # width genelde 768 veya 1024'tür
+        self.change_projection_sem = nn.Linear(vision_width * 2, vision_width) # width genelde 768 veya 1024'tür
 
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)
@@ -630,6 +632,7 @@ class CLIP(nn.Module):
         nn.init.normal_(self.positional_embedding, std=0.01)
 
         if isinstance(self.visual, ModifiedResNet):
+            print("resnet visual")
             if self.visual.attnpool is not None:
                 std = self.visual.attnpool.c_proj.in_features**-0.5
                 nn.init.normal_(self.visual.attnpool.q_proj.weight, std=std)
@@ -710,12 +713,17 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image, return_hidden=False, video_frame=-1):
+    def encode_image(self, image, return_hidden=False, video_frame=2):
         hidden = self.visual(image.type(self.dtype), video_frame=video_frame)
         hidden = self.visual.ln_post(hidden) @ self.visual.proj
 
-        x = torch.cat([hidden[:, 0, :].unsqueeze(1), hidden[:, 50, :].unsqueeze(1)], 1)
-        x = torch.mean(x, 1)
+        # x shape: [Batch, 2, Dim] (0: Before, 1: After olduğunu varsayıyoruz)
+        before_cls = hidden[:, 0, :]
+        after_cls = hidden[:, 50, :]
+        combined = torch.cat([before_cls, after_cls], dim=1)
+
+        # 2. Eğitilebilir katmandan geçir (Shape: [Batch, Dim])
+        x = self.change_projection(combined)
         # x = hidden[:, 0, :]
 
         if return_hidden:
@@ -723,12 +731,17 @@ class CLIP(nn.Module):
 
         return x
     
-    def encode_image_sem(self, image, return_hidden=False, video_frame=-1):
+    def encode_image_sem(self, image, return_hidden=False, video_frame=2):
+        print("video frame: "+str(video_frame))
         hidden = self.semantic_v(image.type(self.dtype), video_frame=video_frame)
         hidden = self.semantic_v.ln_post(hidden) @ self.visual.proj
 
-        x = torch.cat([hidden[:, 0, :].unsqueeze(1), hidden[:, 50, :].unsqueeze(1)], 1)
-        x = torch.mean(x, 1)
+        before_cls = hidden[:, 0, :]
+        after_cls = hidden[:, 50, :]
+        combined = torch.cat([before_cls, after_cls], dim=1)
+
+        # 2. Eğitilebilir katmandan geçir (Shape: [Batch, Dim])
+        x = self.change_projection(combined)
         # x = hidden[:, 0, :]
 
         if return_hidden:
@@ -736,7 +749,7 @@ class CLIP(nn.Module):
 
         return x
 
-    def encode_image_and_semantic_map(self, image_pair, semantic_pair, return_hidden=False, video_frame=-1):
+    def encode_image_and_semantic_map(self, image_pair, semantic_pair, return_hidden=False, video_frame=2):
         image_hidden = self.visual(image_pair.type(self.dtype), video_frame=video_frame)
         image_features_pooled = self.visual.ln_post(image_hidden) @ self.visual.proj
 
@@ -788,7 +801,7 @@ class CLIP(nn.Module):
 
     def forward(self, image, semantic_map, text):
         image_features_rgb = self.encode_image(image)
-        image_features_sem = self.encode_image(semantic_map)
+        image_features_sem = self.encode_image_sem(semantic_map)
         text_features = self.encode_text(text)
 
         # normalized features
