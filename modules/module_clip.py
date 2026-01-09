@@ -610,8 +610,8 @@ class CLIP(nn.Module):
         )
 
         self.visual_fusion = FeatureFusionModule(embed_dim)
-        self.change_projection = nn.Linear(vision_width * 2, vision_width) # width genelde 768 veya 1024'tür
-        self.change_projection_sem = nn.Linear(vision_width * 2, vision_width) # width genelde 768 veya 1024'tür
+        self.change_projection = nn.Linear(768 * 2, 768) # width genelde 768 veya 1024'tür
+        self.change_projection_sem = nn.Linear(768 * 2, 768) # width genelde 768 veya 1024'tür
 
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)
@@ -741,7 +741,7 @@ class CLIP(nn.Module):
         combined = torch.cat([before_cls, after_cls], dim=1)
 
         # 2. Eğitilebilir katmandan geçir (Shape: [Batch, Dim])
-        x = self.change_projection(combined)
+        x = self.change_projection_sem(combined)
         # x = hidden[:, 0, :]
 
         if return_hidden:
