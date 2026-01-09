@@ -783,35 +783,3 @@ class CLIP(nn.Module):
 
         # shape = [global_batch_size, global_batch_size]
         return logits_text_per_image, logits_text_per_text, logits_sem_per_image, logits_sem_per_sem
-
-
-def convert_weights(model: nn.Module):
-    """Convert applicable model parameters to fp16"""
-
-    def _convert_weights_to_fp16(input_module):
-        if isinstance(
-            input_module,
-            (nn.Conv1d, nn.Conv2d, nn.Conv3d, nn.Linear),
-        ):
-            input_module.weight.data = input_module.weight.data.half()
-            if input_module.bias is not None:
-                input_module.bias.data = input_module.bias.data.half()
-
-        if isinstance(input_module, nn.MultiheadAttention):
-            for attr in [
-                *[f"{s}_proj_weight" for s in ["in", "q", "k", "v"]],
-                "in_proj_bias",
-                "bias_k",
-                "bias_v",
-            ]:
-                tensor = getattr(input_module, attr)
-                if tensor is not None:
-                    tensor.data = tensor.data.half()
-
-        for name in ["text_projection", "proj"]:
-            if hasattr(input_module, name):
-                attr = getattr(input_module, name)
-                if attr is not None:
-                    attr.data = attr.data.half()
-
-    model.apply(_convert_weights_to_fp16)

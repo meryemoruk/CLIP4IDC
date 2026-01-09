@@ -12,7 +12,7 @@ from modules.until_module import PreTrainedModel, AllGather, CrossEn
 from modules.module_cross import CrossModel, CrossConfig
 from modules.module_decoder import DecoderModel, DecoderConfig
 
-from modules.module_clip import CLIP, convert_weights
+from modules.module_clip import CLIP
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 logger = logging.getLogger(__name__)
@@ -267,7 +267,6 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
             if key in clip_state_dict:
                 del clip_state_dict[key]
 
-        convert_weights(self.clip)
         # <=== End of CLIP Encoders
 
         if self._stage_one is False and self._stage_two is True:
@@ -516,18 +515,10 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
         if isinstance(visual_output, tuple):
             visual_output = visual_output[0]
             
-        # Aynı durum sequence_output (metin) için de geçerli olabilir, onu da garantiye alalım
         if isinstance(sequence_output, tuple):
             sequence_output = sequence_output[0]
             
         sequence_output, visual_output = sequence_output.contiguous(), visual_output.contiguous()
-
-        # we are usin single gpu, no need for allgather
-        # if self.training:
-        #     visual_output = allgather(visual_output, self.task_config)
-        #     visual_mask = allgather(visual_mask, self.task_config)
-        #     sequence_output = allgather(sequence_output, self.task_config)
-        #     torch.distributed.barrier()
 
         visual_output = visual_output.squeeze(1)
         visual_output = visual_output / visual_output.norm(dim=-1, keepdim=True)

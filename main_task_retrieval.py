@@ -748,7 +748,6 @@ def train_epoch(
     model,
     train_dataloader,
     device,
-    n_gpu,
     optimizer,
     scheduler,
     global_step,
@@ -777,9 +776,7 @@ def train_epoch(
                 image_mask,
             ) = batch
 
-            #logger.warning("<"*10+"inferencing")
 
-            # Forward işleminden 4 çıktı al
             loss = model(
                 input_ids,
                 segment_ids,
@@ -790,7 +787,6 @@ def train_epoch(
                 aft_semantic,
                 image_mask,
             )
-
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -809,9 +805,6 @@ def train_epoch(
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-                #logger.warning("printing epoch info ")
-
-
                 if scheduler is not None:
                     scheduler.step()  # Update learning rate schedule
 
@@ -827,7 +820,8 @@ def train_epoch(
             if global_step % log_step == 0 and local_rank == 0:
                 logger.info("Epoch: %d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f", epoch + 1,
                             args.epochs, step + 1,
-                            len(train_dataloader), "-".join([str('%.9f'%itm) for itm in sorted(list(set(optimizer.get_lr())))]),
+                            len(train_dataloader),
+                            "-".join(str(optimizer.get_lr())),
                             float(loss),
                             (time.time() - start_time) / (log_step * args.gradient_accumulation_steps))
                 start_time = time.time()
@@ -1078,8 +1072,12 @@ def main():
                 or name.find("semantic_v.joint_positional_embedding") == 0
                 or name.find("visual.ln_mid") == 0
                 or name.find("semantic_v.ln_mid") == 0
-                or name.find("clip.change_projection") == 0
-                or name.find("clip.change_projection_sem") == 0
+                or name.find("change_projection") == 0
+                or name.find("change_projection.weight") == 0
+                or name.find("change_projection.bias") == 0
+                or name.find("change_projection_sem") == 0
+                or name.find("change_projection_sem.weight") == 0
+                or name.find("change_projection_sem.bias") == 0
             ):
                 continue  # need to train
             elif (
@@ -1172,7 +1170,7 @@ def main():
 
         global_step = 0
         for epoch in range(resumed_epoch, args.epochs):
-            tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, n_gpu, optimizer,
+            tr_loss, global_step = train_epoch(epoch, args, model, train_dataloader, device, optimizer,
                                                scheduler, global_step, local_rank=args.local_rank)
             if args.local_rank == 0:
                 logger.info("Epoch %d/%s Finished, Train Loss: %f", epoch + 1, args.epochs, tr_loss)
