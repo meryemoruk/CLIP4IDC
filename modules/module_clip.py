@@ -450,6 +450,7 @@ class VisualTransformer(nn.Module):
     def forward(self, x: torch.Tensor, video_frame=2, visualize=False):
         if self.linear_patch == "3d":
             assert video_frame != -1
+            print("3d")
             x_3d = x.reshape(
                 -1,
                 video_frame,
