@@ -11,7 +11,8 @@ from metrics import tensor_text_to_video_metrics
 from metrics import tensor_video_to_text_sim
 from modules.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from modules.modeling import CLIP4IDC
-from modules.optimization import BertAdam
+from torch.optim import AdamW
+from transformers import get_linear_schedule_with_warmup
 from modules.tokenization_clip import SimpleTokenizer as ClipTokenizer
 
 from util import get_logger
@@ -679,15 +680,20 @@ def prep_optimizer(args, model, num_train_optimization_steps, device, n_gpu, loc
         {'params': [p for n, p in no_decay_noclip_param_tp], 'weight_decay': 0.0}
     ]
 
-    scheduler = None
-    optimizer = BertAdam(optimizer_grouped_parameters, lr=args.lr, warmup=args.warmup_proportion,
-                         schedule='warmup_cosine', b1=0.9, b2=0.98, e=1e-6,
-                         t_total=num_train_optimization_steps, weight_decay=weight_decay,
-                         max_grad_norm=1.0)
-
-    if torch.cuda.device_count() > 1:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
-                                                      output_device=local_rank, find_unused_parameters=True)
+    
+    # 1. Modern Optimizer Tanımla
+    optimizer = AdamW(optimizer_grouped_parameters, lr=args.lr, weight_decay=0.01)
+    
+    # 2. Modern Scheduler Tanımla
+    # num_warmup_steps: Genelde toplam adımın %10'u kadar olması önerilir.
+    # args.warmup_proportion (örn 0.1) * toplam_adım
+    num_warmup_steps = int(num_train_optimization_steps * args.warmup_proportion)
+    
+    scheduler = get_linear_schedule_with_warmup(
+        optimizer, 
+        num_warmup_steps=num_warmup_steps, 
+        num_training_steps=num_train_optimization_steps
+    )
 
     return optimizer, scheduler, model
 
@@ -788,28 +794,26 @@ def train_epoch(
                 image_mask,
             )
 
+            total_loss += float(loss)
+
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
+
+            loss.backward()
 
             for name, param in model.named_parameters():
                 if param.grad is not None:
                     if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
                         logger.info(f"HATA: {name} gradyanında NaN veya Inf bulundu!")
 
-
-            loss.backward()
-
-            #logger.warning("loss backward ")
-
-            total_loss += float(loss)
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
-                if scheduler is not None:
-                    scheduler.step()  # Update learning rate schedule
-
                 optimizer.step()
                 optimizer.zero_grad()
+
+                if scheduler is not None:
+                    scheduler.step()  # Update learning rate schedule
 
                 # Clamp logit scale
                 torch.clamp_(model.clip.logit_scale.data, max=np.log(100))
