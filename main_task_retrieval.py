@@ -794,7 +794,7 @@ def train_epoch(
                 image_mask,
             )
 
-            total_loss += float(loss)
+            total_loss += loss.item()
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -825,8 +825,8 @@ def train_epoch(
                 logger.info("Epoch: %d/%s, Step: %d/%d, Lr: %s, Loss: %f, Time/step: %f", epoch + 1,
                             args.epochs, step + 1,
                             len(train_dataloader),
-                            "-".join(str(optimizer.get_lr())),
-                            float(loss),
+                            " ".join([f"{pg['lr']:.2e}" for pg in optimizer.param_groups]),
+                            loss.item(),
                             (time.time() - start_time) / (log_step * args.gradient_accumulation_steps))
                 start_time = time.time()
 
