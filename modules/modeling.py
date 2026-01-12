@@ -336,7 +336,6 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
                 token_type_ids,
                 attention_mask,
                 image_pairs,
-                semantic_pairs,
                 image_mask,
                 shaped=True,
                 video_frame=pair,
