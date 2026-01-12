@@ -328,7 +328,6 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
                 image_mask,
                 shaped=True,
                 video_frame=pair,
-                task_config = self.task_config
             )
         else:
             sequence_emb, visual_emb_rgb,  sequence_output, visual_output_rgb = self.get_sequence_and_visual_output(
@@ -339,7 +338,6 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
                 image_mask,
                 shaped=True,
                 video_frame=pair,
-                task_config = self.task_config
             )
 
 
