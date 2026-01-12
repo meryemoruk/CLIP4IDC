@@ -451,6 +451,8 @@ def get_args(description="CLIP4IDC on Retrieval Task"):
     parser.add_argument("--do_retrieval", action="store_true")
     parser.add_argument("--do_save_vector", action="store_true")
 
+    parser.add_argument("--do_semantic", action="store_true")
+
     parser.add_argument("--dataloader_type", type=str, default="test")
 
     parser.add_argument("--index_retrieval", type=int, default=20)
