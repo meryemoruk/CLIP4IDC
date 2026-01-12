@@ -480,7 +480,7 @@ class CLIP4IDC(CLIP4IDCPreTrainedModel):
 
         
         visual_output_rgb, visual_hidden_rgb = self.get_visual_output(
-            image_pair, semantic_pair, visual_mask, shaped=True, video_frame=video_frame
+            image_pair, visual_mask, shaped=True, video_frame=video_frame
         )
 
         return sequence_output, visual_output_rgb, sequence_hidden, visual_hidden_rgb
